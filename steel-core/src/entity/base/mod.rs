@@ -56,8 +56,6 @@ pub const DEFAULT_TICKS_REQUIRED_TO_FREEZE: i32 = 140;
 pub const DEFAULT_MAX_AIR_SUPPLY: i32 = 300;
 /// Maximum number of scoreboard tags a single entity may carry.
 pub const MAX_ENTITY_TAGS: usize = 1024;
-const FIRE_IGNITE_TICKS: i32 = 8 * 20;
-const LAVA_IGNITE_TICKS: i32 = 15 * 20;
 
 fn require_finite_position(position: DVec3, field: &str) {
     assert!(
@@ -1604,11 +1602,18 @@ impl EntityBase {
     }
 
     /// Applies a vanilla inside-block effect to base fire/freeze state.
+    ///
+    /// `ignite_ticks` is the entity-scaled duration for `FireIgnite`/`LavaIgnite`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "entity-derived inputs are resolved before locking base state"
+    )]
     pub fn apply_inside_block_effect(
         &self,
         effect_type: InsideBlockEffectType,
         can_freeze: bool,
         fire_immune: bool,
+        ignite_ticks: i32,
         fire_ignite_extra_ticks: i32,
         ticks_required_to_freeze: i32,
         remaining_fire_ticks_cap: Option<i32>,
@@ -1629,6 +1634,7 @@ impl EntityBase {
                 Self::apply_fire_ignite(
                     &mut state.fire_freeze,
                     fire_immune,
+                    ignite_ticks,
                     fire_ignite_extra_ticks,
                     remaining_fire_ticks_cap,
                 );
@@ -1637,7 +1643,7 @@ impl EntityBase {
                 if !fire_immune {
                     Self::ignite_for_ticks_in_state(
                         &mut state.fire_freeze,
-                        LAVA_IGNITE_TICKS,
+                        ignite_ticks,
                         remaining_fire_ticks_cap,
                     );
                 }
@@ -1652,6 +1658,7 @@ impl EntityBase {
     fn apply_fire_ignite(
         fire_freeze: &mut EntityFireFreezeState,
         fire_immune: bool,
+        ignite_ticks: i32,
         fire_ignite_extra_ticks: i32,
         remaining_fire_ticks_cap: Option<i32>,
     ) {
@@ -1674,11 +1681,7 @@ impl EntityBase {
         }
 
         if fire_freeze.remaining_fire_ticks >= 0 {
-            Self::ignite_for_ticks_in_state(
-                fire_freeze,
-                FIRE_IGNITE_TICKS,
-                remaining_fire_ticks_cap,
-            );
+            Self::ignite_for_ticks_in_state(fire_freeze, ignite_ticks, remaining_fire_ticks_cap);
         }
     }
 

@@ -4,17 +4,20 @@ use std::sync::Arc;
 
 use item_in_use::EnchantedItemInUse;
 use steel_math::round_f32;
-use steel_utils::TICKS_PER_SECOND;
+use steel_utils::{Identifier, TICKS_PER_SECOND};
 
+use steel_registry::attribute::AttributeRef;
 use steel_registry::enchantment_effect::{
-    DamageSourcePredicate, EnchantmentEffectComponent, EnchantmentEffectRequirements,
-    EnchantmentEntityEffect, EnchantmentEntityTarget, EnchantmentTarget, EntityPredicate,
-    EntityTypePredicate, EntityTypeSpecificPredicate, EntityVehiclePredicate, MobEffectSelection,
+    DamageSourcePredicate, EnchantmentAttributeEffect, EnchantmentEffectComponent,
+    EnchantmentEffectRequirements, EnchantmentEntityEffect, EnchantmentEntityTarget,
+    EnchantmentTarget, EntityPredicate, EntityTypePredicate, EntityTypeSpecificPredicate,
+    EntityVehiclePredicate, MobEffectSelection,
 };
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
 use steel_registry::{REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_entities, vanilla_items};
 
+use crate::entity::attribute::AttributeModifier;
 use crate::entity::damage::DamageSource;
 use crate::entity::{Entity, LivingEntity, MobEffectInstance, SharedEntity};
 use crate::inventory::equipment::EquipmentSlot;
@@ -277,6 +280,53 @@ fn do_post_attack_victim_effects(
             if item_broke {
                 living_victim.on_equipped_item_broken(item_ref, slot);
             }
+        }
+    }
+}
+
+/// Visits the `minecraft:attributes` modifiers an item's enchantments grant in `slot`.
+pub(crate) fn for_each_modifier(
+    item: &ItemStack,
+    slot: EquipmentSlot,
+    consumer: &mut dyn FnMut(AttributeRef, AttributeModifier),
+) {
+    let Some(enchantments) = item.get_enchantments() else {
+        return;
+    };
+
+    for (key, level) in enchantments.iter() {
+        if *level == 0 {
+            continue;
+        }
+        let Some(enchantment) = REGISTRY.enchantments.by_key(key) else {
+            continue;
+        };
+        if !enchantment.matching_slot(slot) {
+            continue;
+        }
+        for effect in enchantment.effects.attributes {
+            consumer(effect.attribute, effect.get_modifier(*level as i32, slot));
+        }
+    }
+}
+
+/// Steel-core methods for registry attribute effects; `AttributeModifier` lives
+/// in `steel-core`, so `getModifier` cannot be an inherent registry method.
+trait EnchantmentAttributeEffectExt {
+    /// Suffixes the id with the slot name so the same enchantment on several
+    /// equipment pieces stacks.
+    fn get_modifier(&self, level: i32, slot: EquipmentSlot) -> AttributeModifier;
+}
+
+impl EnchantmentAttributeEffectExt for EnchantmentAttributeEffect {
+    fn get_modifier(&self, level: i32, slot: EquipmentSlot) -> AttributeModifier {
+        AttributeModifier {
+            id: Identifier::new(
+                self.id.namespace.clone(),
+                format!("{}/{}", self.id.path, slot.name()),
+            ),
+            amount: f64::from(self.amount.calculate(level)),
+            operation: self.operation,
         }
     }
 }

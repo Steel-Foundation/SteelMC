@@ -1,5 +1,7 @@
 use std::array;
 
+use steel_utils::TICKS_PER_SECOND;
+
 use crate::entity::Entity;
 
 /// Callback queued around an inside-block effect.
@@ -30,7 +32,22 @@ pub enum InsideBlockEffectType {
     Extinguish,
 }
 
+/// Vanilla `BaseFireBlock.fireIgnite` duration before living `BURNING_TIME` scaling.
+const FIRE_IGNITE_TICKS: i32 = 8 * TICKS_PER_SECOND;
+/// Vanilla `Entity.lavaIgnite` duration before living `BURNING_TIME` scaling.
+const LAVA_IGNITE_TICKS: i32 = 15 * TICKS_PER_SECOND;
+
 impl InsideBlockEffectType {
+    /// Returns the unscaled ignite duration for fire-starting effects.
+    #[must_use]
+    pub const fn ignite_ticks(self) -> Option<i32> {
+        match self {
+            Self::FireIgnite => Some(FIRE_IGNITE_TICKS),
+            Self::LavaIgnite => Some(LAVA_IGNITE_TICKS),
+            Self::Freeze | Self::ClearFreeze | Self::Extinguish => None,
+        }
+    }
+
     const fn index(self) -> usize {
         match self {
             Self::Freeze => 0,

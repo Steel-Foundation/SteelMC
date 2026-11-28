@@ -1146,10 +1146,14 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         } else {
             0
         };
+        let ignite_ticks = effect_type
+            .ignite_ticks()
+            .map_or(0, |ticks| self.scaled_ignite_ticks(ticks));
         self.base().apply_inside_block_effect(
             effect_type,
             self.can_freeze(),
             self.fire_immune(),
+            ignite_ticks,
             fire_ignite_extra_ticks,
             self.ticks_required_to_freeze(),
             self.remaining_fire_ticks_cap(),
@@ -2319,10 +2323,24 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.clear_fire();
     }
 
+    /// Scales an ignite duration by `BURNING_TIME` for living entities, matching
+    /// vanilla's `LivingEntity.igniteForTicks` override.
+    fn scaled_ignite_ticks(&self, number_of_ticks: i32) -> i32 {
+        self.as_living_entity().map_or(number_of_ticks, |living| {
+            let burning_time = living
+                .attributes()
+                .lock()
+                .required_value(vanilla_attributes::BURNING_TIME);
+            (f64::from(number_of_ticks) * burning_time).ceil() as i32
+        })
+    }
+
     /// Ignites this entity for a vanilla tick duration.
     fn ignite_for_ticks(&self, number_of_ticks: i32) {
-        self.base()
-            .ignite_for_ticks(number_of_ticks, self.remaining_fire_ticks_cap());
+        self.base().ignite_for_ticks(
+            self.scaled_ignite_ticks(number_of_ticks),
+            self.remaining_fire_ticks_cap(),
+        );
         self.sync_base_fire_freeze_entity_data();
     }
 

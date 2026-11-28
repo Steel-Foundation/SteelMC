@@ -194,6 +194,57 @@ fn head_yaw_uses_living_head_rotation_only() {
 }
 
 #[test]
+fn enchantment_attribute_modifiers_stack_per_matching_slot() {
+    init_vanilla_registry();
+    let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
+    let resistance = |entity: &LivingFluidTestEntity| {
+        entity
+            .attributes()
+            .lock()
+            .required_value(vanilla_attributes::EXPLOSION_KNOCKBACK_RESISTANCE)
+    };
+    let base = resistance(&entity);
+    let blast_protection = |item, level| {
+        let mut stack = ItemStack::new(item);
+        stack.set_enchantments(
+            &[(Identifier::vanilla_static("blast_protection"), level)],
+            false,
+        );
+        stack
+    };
+
+    entity.equip(
+        EquipmentSlot::Head,
+        blast_protection(&vanilla_items::DIAMOND_HELMET, 2),
+    );
+    entity.equip(
+        EquipmentSlot::Chest,
+        blast_protection(&vanilla_items::DIAMOND_CHESTPLATE, 1),
+    );
+    // Blast Protection only applies in armor slots.
+    entity.equip(
+        EquipmentSlot::MainHand,
+        blast_protection(&vanilla_items::DIAMOND_SWORD, 4),
+    );
+    for slot in [
+        EquipmentSlot::Head,
+        EquipmentSlot::Chest,
+        EquipmentSlot::MainHand,
+    ] {
+        LivingEntity::refresh_equipment_attribute_modifiers(&entity, slot);
+    }
+
+    let level_one = f64::from(0.15_f32);
+    let level_two = f64::from(0.3_f32);
+    assert!((resistance(&entity) - (base + level_two + level_one)).abs() < 1.0e-9);
+
+    entity.equip(EquipmentSlot::Head, ItemStack::empty());
+    LivingEntity::refresh_equipment_attribute_modifiers(&entity, EquipmentSlot::Head);
+
+    assert!((resistance(&entity) - (base + level_one)).abs() < 1.0e-9);
+}
+
+#[test]
 fn living_equipment_attribute_modifiers_refresh_for_slot() {
     init_vanilla_registry();
     let entity = LivingFluidTestEntity::new(0.0, 0.0, true);
