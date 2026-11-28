@@ -20,9 +20,8 @@ impl World {
             return REGISTRY.blocks.get_base_state_id(&vanilla_blocks::VOID_AIR);
         }
 
-        let chunk_pos = Self::chunk_pos_for_block(pos);
         self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+            .full_chunk_block_state(pos)
             .unwrap_or_else(|| REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR))
     }
 

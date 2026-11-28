@@ -75,8 +75,8 @@ struct ActiveCache {
     stats: GameplayChunkLookupCacheStats,
 }
 
-enum CacheEntryProbe {
-    Hit(Option<Arc<ChunkHolder>>),
+enum CacheEntryProbe<'cache> {
+    Hit(Option<&'cache Arc<ChunkHolder>>),
     Miss,
 }
 
@@ -90,8 +90,9 @@ impl ActiveCache {
         }
     }
 
+    /// Finds and promotes the entry for `pos`. A hit without a holder is a cached map absence.
     #[inline]
-    fn lookup(&mut self, pos: ChunkPos) -> CacheEntryProbe {
+    fn lookup(&mut self, pos: ChunkPos) -> CacheEntryProbe<'_> {
         let Some(index) = self
             .entries
             .iter()
@@ -99,15 +100,15 @@ impl ActiveCache {
         else {
             return CacheEntryProbe::Miss;
         };
-        let holder = self.entries[index]
+        self.promote(index);
+        let holder = self.entries[0]
             .as_ref()
-            .and_then(|entry| entry.holder.as_ref().map(Arc::clone));
+            .and_then(|entry| entry.holder.as_ref());
         if holder.is_some() {
             self.stats.holder_hits += 1;
         } else {
             self.stats.missing_hits += 1;
         }
-        self.promote(index);
         CacheEntryProbe::Hit(holder)
     }
 
@@ -156,8 +157,8 @@ fn next_scope_id() -> Option<NonZeroU64> {
     })
 }
 
-enum CacheProbe {
-    Hit(Option<Arc<ChunkHolder>>),
+enum CacheProbe<R> {
+    Hit(R),
     Miss,
     Bypass,
 }
@@ -279,7 +280,7 @@ impl LocalFullChunkHolderCache {
             {
                 self.stats.fallback_reads += 1;
             }
-            return chunk_map.with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos));
+            return chunk_map.full_chunk_block_state(pos);
         };
 
         if let Some(index) = self
@@ -388,40 +389,85 @@ fn lookup_or_insert_for_owner<F>(
 where
     F: FnOnce() -> Option<Arc<ChunkHolder>>,
 {
-    let probe = ACTIVE_CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let Some(cache) = cache.as_mut() else {
-            return CacheProbe::Bypass;
-        };
-        if cache.owner != owner {
-            cache.stats.foreign_map_bypasses += 1;
-            return CacheProbe::Bypass;
-        }
-        match cache.lookup(pos) {
-            CacheEntryProbe::Hit(holder) => return CacheProbe::Hit(holder),
-            CacheEntryProbe::Miss => {}
-        }
-        cache.stats.scc_lookups += 1;
-        CacheProbe::Miss
-    });
-
-    match probe {
+    match probe_active(&owner, pos, |holder| holder.map(Arc::clone)) {
         CacheProbe::Hit(holder) => holder,
         CacheProbe::Bypass => load(),
         CacheProbe::Miss => {
             let holder = load();
-            ACTIVE_CACHE.with(|cache| {
-                let mut cache = cache.borrow_mut();
-                let Some(cache) = cache.as_mut() else {
-                    return;
-                };
-                if cache.owner == owner {
-                    cache.insert(pos, holder.clone());
-                }
-            });
+            insert_active(&owner, pos, holder.clone());
             holder
         }
     }
+}
+
+/// Reads the live block state at `pos` from its Full chunk, borrowing a cached holder instead of
+/// cloning it.
+///
+/// `load` resolves the holder from the active map on a cache miss. Returns `None` when the chunk
+/// is absent, not permitted at Full, or not yet published.
+#[inline]
+pub(crate) fn full_block_state_or_insert_with<F>(
+    chunk_map: &ChunkMap,
+    pos: BlockPos,
+    load: F,
+) -> Option<BlockStateId>
+where
+    F: FnOnce(ChunkPos) -> Option<Arc<ChunkHolder>>,
+{
+    let owner = CacheOwner::for_chunk_map(chunk_map);
+    let chunk_pos = ChunkPos::from_block_pos(pos);
+    let read = |holder: Option<&Arc<ChunkHolder>>| {
+        holder.and_then(|holder| live_full_block_state(holder, pos))
+    };
+
+    match probe_active(&owner, chunk_pos, read) {
+        CacheProbe::Hit(state) => state,
+        CacheProbe::Bypass => read(load(chunk_pos).as_ref()),
+        CacheProbe::Miss => {
+            let holder = load(chunk_pos);
+            let state = read(holder.as_ref());
+            insert_active(&owner, chunk_pos, holder);
+            state
+        }
+    }
+}
+
+/// Probes the active cache for `pos` and maps a hit while the cache is still borrowed.
+///
+/// `on_hit` must not look up a chunk on this thread: that would re-enter the borrowed cache.
+#[inline]
+fn probe_active<R>(
+    owner: &CacheOwner,
+    pos: ChunkPos,
+    on_hit: impl FnOnce(Option<&Arc<ChunkHolder>>) -> R,
+) -> CacheProbe<R> {
+    ACTIVE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let Some(cache) = cache.as_mut() else {
+            return CacheProbe::Bypass;
+        };
+        if cache.owner != *owner {
+            cache.stats.foreign_map_bypasses += 1;
+            return CacheProbe::Bypass;
+        }
+        if let CacheEntryProbe::Hit(holder) = cache.lookup(pos) {
+            return CacheProbe::Hit(on_hit(holder));
+        }
+        cache.stats.scc_lookups += 1;
+        CacheProbe::Miss
+    })
+}
+
+fn insert_active(owner: &CacheOwner, pos: ChunkPos, holder: Option<Arc<ChunkHolder>>) {
+    ACTIVE_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let Some(cache) = cache.as_mut() else {
+            return;
+        };
+        if cache.owner == *owner {
+            cache.insert(pos, holder);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -625,6 +671,38 @@ mod tests {
         assert_eq!(loads, 2);
         assert_eq!(stats.foreign_map_bypasses, 2);
         assert_eq!(stats.scc_lookups, 0);
+    }
+
+    #[test]
+    fn cached_block_state_read_rechecks_full_permission_on_every_hit() {
+        let fixture = fresh_test_world("cached_block_state_read_permission");
+        let world = &fixture.world;
+        init_behaviors();
+        let pos = BlockPos::new(3, 64, 7);
+        let holder = insert_ready_full_chunk(world, ChunkPos::from_block_pos(pos));
+        set_test_block(world, pos, &vanilla_blocks::STONE);
+
+        let scope = GameplayChunkLookupCacheScope::enter(&world.chunk_map);
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::STONE.default_state()
+        );
+
+        holder.update_highest_allowed_status(None);
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::AIR.default_state()
+        );
+
+        holder.update_highest_allowed_status(Some(ChunkTicketLevel::FULL_CHUNK));
+        assert_eq!(
+            world.get_block_state(pos),
+            vanilla_blocks::STONE.default_state()
+        );
+
+        let stats = scope.finish();
+        assert_eq!(stats.scc_lookups, 1);
+        assert_eq!(stats.holder_hits, 2);
     }
 
     #[test]

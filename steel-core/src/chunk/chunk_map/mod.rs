@@ -52,7 +52,7 @@ use crate::chunk::full_chunk_readiness::{
 };
 pub use crate::chunk::gameplay_chunk_lookup_cache::GameplayChunkLookupCacheStats;
 use crate::chunk::gameplay_chunk_lookup_cache::{
-    GameplayChunkLookupCacheScope, lookup_or_insert_with,
+    GameplayChunkLookupCacheScope, full_block_state_or_insert_with, lookup_or_insert_with,
 };
 use crate::chunk::light::{
     LIGHT_CACHE_RADIUS, LightCacheLayout, LightCacheSetupRadius, LightLayer,
@@ -487,6 +487,13 @@ impl ChunkMap {
         holder.try_full_chunk().map(f)
     }
 
+    /// Reads a live block state from a fully loaded chunk.
+    /// Returns `None` if the chunk is not loaded or not at Full status.
+    #[inline]
+    pub(crate) fn full_chunk_block_state(&self, pos: BlockPos) -> Option<BlockStateId> {
+        full_block_state_or_insert_with(self, pos, |chunk_pos| self.load_active_holder(chunk_pos))
+    }
+
     /// Returns the active holder for a fully loaded chunk.
     pub(crate) fn active_full_chunk_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
         let holder = self.lookup_active_holder(pos)?;
@@ -512,9 +519,13 @@ impl ChunkMap {
 
     #[inline]
     fn lookup_active_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
-        lookup_or_insert_with(self, pos, || {
-            self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
-        })
+        lookup_or_insert_with(self, pos, || self.load_active_holder(pos))
+    }
+
+    /// Resolves a holder from the active map, bypassing the gameplay lookup cache.
+    #[inline]
+    fn load_active_holder(&self, pos: ChunkPos) -> Option<Arc<ChunkHolder>> {
+        self.chunks.read_sync(&pos, |_, holder| Arc::clone(holder))
     }
 
     /// Returns whether an active full chunk is currently block ticking.

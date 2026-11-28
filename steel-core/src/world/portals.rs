@@ -278,9 +278,7 @@ impl World {
             return Some(REGISTRY.blocks.get_base_state_id(&vanilla_blocks::AIR));
         }
 
-        let chunk_pos = Self::chunk_pos_for_block(pos);
-        self.chunk_map
-            .with_full_chunk(chunk_pos, |chunk| chunk.get_block_state(pos))
+        self.chunk_map.full_chunk_block_state(pos)
     }
 
     pub(super) fn fallback_nether_portal_position(
