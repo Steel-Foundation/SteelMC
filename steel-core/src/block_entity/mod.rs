@@ -28,6 +28,7 @@ mod components;
 mod container_openers_counter;
 mod container_properties;
 pub mod entities;
+mod item_transfer;
 mod randomizable_container;
 mod registry;
 mod storage;
