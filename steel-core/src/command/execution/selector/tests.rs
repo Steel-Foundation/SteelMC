@@ -13,7 +13,8 @@ use crate::{
         execution::{CommandArgumentSource, CommandResultCallback, ExecutionCommandSource},
     },
     entity::{Entity, EntityBase},
-    scoreboard::{ScoreHolder, Scoreboard},
+    scoreboard::{ScoreHolder, Scoreboard, ServerScoreboard},
+    server::worlds::WorldMap,
 };
 
 use super::model::{
@@ -243,12 +244,14 @@ fn selector_score_and_team_filters_use_one_domain_scoreboard() {
     let Ok(kills) = scoreboard.add_objective("kills") else {
         panic!("objective should be added");
     };
-    let Ok(red) = scoreboard.add_team("red") else {
+    let worlds = WorldMap::new("test".to_owned(), &[], &[]);
+    let synced = ServerScoreboard::new(&scoreboard, &worlds, "test");
+    let Ok(red) = synced.add_team("red") else {
         panic!("team should be added");
     };
     let holder = ScoreHolder::new("Steve");
     assert!(scoreboard.set_score(&holder, &kills, 5).is_ok());
-    assert!(scoreboard.add_holder_to_team(&holder, &red).is_ok());
+    assert!(synced.add_holder_to_team(&holder, &red).is_ok());
 
     assert!(score_filter_matches(
         &[("kills".to_owned(), IntRange::exactly(5))],

@@ -566,6 +566,11 @@ impl Server {
             );
             return Err("player is not present in the current world".to_owned());
         };
+        // The client keeps its scoreboard across respawns. Clear the source teams while
+        // the player is detached, so later source changes cannot leave stale teams behind.
+        if let Some(scoreboard) = self.scoreboard(&current_domain) {
+            scoreboard.send_team_removals_to(&player);
+        }
         self.jobs.spawn(DomainSwitchJob::new(
             self,
             player,

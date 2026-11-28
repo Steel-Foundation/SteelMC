@@ -2,8 +2,9 @@
 //!
 //! This module owns the scoreboard data needed by selectors and command
 //! execution: objective identity and mutability, score values and locks, and
-//! team membership. Display slots and client presentation are outside this
-//! command-system scope.
+//! teams with their properties and membership. Team changes reach clients
+//! through [`ServerScoreboard`]. Objective display slots and objective
+//! presentation are not implemented yet.
 
 use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
@@ -12,11 +13,17 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use steel_utils::locks::{AsyncMutex, SyncRwLock};
+use steel_utils::locks::{AsyncMutex, SyncMutex, SyncRwLock};
 use thiserror::Error;
 
 use crate::{server::worlds::WorldMap, world::World};
 use steel_utils::saved_data::names as saved_data_names;
+
+mod sync;
+mod team;
+
+pub use sync::ServerScoreboard;
+pub use team::TeamProperties;
 
 /// Score holder name stored by the vanilla scoreboard.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -124,7 +131,7 @@ struct ObjectiveState {
 struct PersistentScoreboard {
     objectives: BTreeMap<String, ObjectiveState>,
     scores: BTreeMap<String, BTreeMap<String, ScoreboardScore>>,
-    teams: BTreeSet<String>,
+    teams: BTreeMap<String, TeamProperties>,
     holder_teams: BTreeMap<String, String>,
 }
 
@@ -157,6 +164,14 @@ pub enum ScoreboardError {
     ReadOnlyObjective(String),
 }
 
+/// Membership result of adding a holder to a team.
+enum TeamMembershipChange {
+    /// The holder was already on the team.
+    Unchanged,
+    /// The holder joined the team, leaving `previous` if it was on one.
+    Joined { previous: Option<String> },
+}
+
 struct ScoreboardSaveSnapshot {
     revision: u64,
     state: PersistentScoreboard,
@@ -165,6 +180,9 @@ struct ScoreboardSaveSnapshot {
 /// Command-facing scoreboard for one Steel domain.
 pub struct Scoreboard {
     state: SyncRwLock<PersistentScoreboard>,
+    /// Held by [`ServerScoreboard`] across a change and its broadcast, so clients
+    /// receive packets in state order. Reads never take it.
+    client_sync: SyncMutex<()>,
     revision: AtomicU64,
     saved_revision: AtomicU64,
 }
@@ -175,6 +193,7 @@ impl Scoreboard {
     pub fn new() -> Self {
         Self {
             state: SyncRwLock::new(PersistentScoreboard::default()),
+            client_sync: SyncMutex::new(()),
             revision: AtomicU64::new(0),
             saved_revision: AtomicU64::new(0),
         }
@@ -184,6 +203,7 @@ impl Scoreboard {
         validate_persistent_scoreboard(&state)?;
         Ok(Self {
             state: SyncRwLock::new(state),
+            client_sync: SyncMutex::new(()),
             revision: AtomicU64::new(0),
             saved_revision: AtomicU64::new(0),
         })
@@ -243,20 +263,56 @@ impl Scoreboard {
         self.state.read().objectives.keys().cloned().collect()
     }
 
-    /// Adds a team.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the team name is empty or already exists.
-    pub fn add_team(&self, name: impl Into<String>) -> Result<ScoreboardTeam, ScoreboardError> {
-        let name = name.into();
+    fn add_team(&self, name: String) -> Result<(ScoreboardTeam, TeamProperties), ScoreboardError> {
         ensure_team_name(&name)?;
         let mut state = self.state.write();
-        if !state.teams.insert(name.clone()) {
+        let Entry::Vacant(entry) = state.teams.entry(name.clone()) else {
             return Err(ScoreboardError::DuplicateTeam(name));
-        }
+        };
+        let properties = entry.insert(TeamProperties::new(&name)).clone();
         self.mark_dirty();
-        Ok(ScoreboardTeam { name })
+        Ok((ScoreboardTeam { name }, properties))
+    }
+
+    /// Removes a team and clears its members' membership.
+    fn remove_team(&self, team: &ScoreboardTeam) -> Result<(), ScoreboardError> {
+        let mut state = self.state.write();
+        if state.teams.remove(team.name()).is_none() {
+            return Err(ScoreboardError::MissingTeam(team.name().to_owned()));
+        }
+        state
+            .holder_teams
+            .retain(|_, holder_team| holder_team != team.name());
+        self.mark_dirty();
+        Ok(())
+    }
+
+    /// Returns a team's current properties.
+    #[must_use]
+    pub fn team_properties(&self, team: &ScoreboardTeam) -> Option<TeamProperties> {
+        self.state.read().teams.get(team.name()).cloned()
+    }
+
+    /// Applies `update` to a team's properties and returns the result when it
+    /// changed anything.
+    fn update_team_properties(
+        &self,
+        team: &ScoreboardTeam,
+        update: impl FnOnce(&mut TeamProperties),
+    ) -> Result<Option<TeamProperties>, ScoreboardError> {
+        let mut state = self.state.write();
+        let properties = state
+            .teams
+            .get_mut(team.name())
+            .ok_or_else(|| ScoreboardError::MissingTeam(team.name().to_owned()))?;
+        let previous = properties.clone();
+        update(properties);
+        if *properties == previous {
+            return Ok(None);
+        }
+        let updated = properties.clone();
+        self.mark_dirty();
+        Ok(Some(updated))
     }
 
     /// Returns a team by name.
@@ -265,7 +321,7 @@ impl Scoreboard {
         self.state
             .read()
             .teams
-            .contains(name)
+            .contains_key(name)
             .then(|| ScoreboardTeam {
                 name: name.to_owned(),
             })
@@ -274,7 +330,7 @@ impl Scoreboard {
     /// Returns team names in stable order.
     #[must_use]
     pub fn team_names(&self) -> Vec<String> {
-        self.state.read().teams.iter().cloned().collect()
+        self.state.read().teams.keys().cloned().collect()
     }
 
     /// Returns the current team name for a score holder.
@@ -284,30 +340,50 @@ impl Scoreboard {
     }
 
     /// Adds a holder to a team, replacing any prior membership.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for an empty holder or a team that no longer exists.
-    pub fn add_holder_to_team(
+    fn add_holder_to_team(
         &self,
         holder: &ScoreHolder,
         team: &ScoreboardTeam,
-    ) -> Result<(), ScoreboardError> {
+    ) -> Result<TeamMembershipChange, ScoreboardError> {
         ensure_holder_name(holder.name())?;
         let mut state = self.state.write();
-        if !state.teams.contains(team.name()) {
+        if !state.teams.contains_key(team.name()) {
             return Err(ScoreboardError::MissingTeam(team.name().to_owned()));
         }
-        if state
+        let previous = state
             .holder_teams
-            .insert(holder.name().to_owned(), team.name().to_owned())
-            .as_deref()
-            == Some(team.name())
-        {
-            return Ok(());
+            .insert(holder.name().to_owned(), team.name().to_owned());
+        if previous.as_deref() == Some(team.name()) {
+            return Ok(TeamMembershipChange::Unchanged);
         }
         self.mark_dirty();
-        Ok(())
+        Ok(TeamMembershipChange::Joined { previous })
+    }
+
+    /// Removes a holder from its team and returns that team's name.
+    fn remove_holder_from_team(&self, holder: &ScoreHolder) -> Option<String> {
+        let removed = self.state.write().holder_teams.remove(holder.name());
+        if removed.is_some() {
+            self.mark_dirty();
+        }
+        removed
+    }
+
+    /// Returns every team with its properties and members, in stable order.
+    fn teams_with_members(&self) -> Vec<(String, TeamProperties, Vec<String>)> {
+        let state = self.state.read();
+        let mut members = BTreeMap::<&str, Vec<String>>::new();
+        for (holder, team) in &state.holder_teams {
+            members.entry(team).or_default().push(holder.clone());
+        }
+        state
+            .teams
+            .iter()
+            .map(|(name, properties)| {
+                let players = members.remove(name.as_str()).unwrap_or_default();
+                (name.clone(), properties.clone(), players)
+            })
+            .collect()
     }
 
     /// Returns tracked score holders in stable order.
@@ -443,7 +519,7 @@ fn validate_persistent_scoreboard(state: &PersistentScoreboard) -> Result<(), Sc
     for name in state.objectives.keys() {
         ensure_objective_name(name)?;
     }
-    for name in &state.teams {
+    for name in state.teams.keys() {
         ensure_team_name(name)?;
     }
     for (holder, scores) in &state.scores {
@@ -456,7 +532,7 @@ fn validate_persistent_scoreboard(state: &PersistentScoreboard) -> Result<(), Sc
     }
     for (holder, team) in &state.holder_teams {
         ensure_holder_name(holder)?;
-        if !state.teams.contains(team) {
+        if !state.teams.contains_key(team) {
             return Err(ScoreboardError::MissingTeam(team.clone()));
         }
     }
@@ -550,6 +626,12 @@ impl DomainScoreboards {
         self.scoreboards.get(domain)
     }
 
+    fn get_key_value(&self, domain: &str) -> Option<(&str, &Scoreboard)> {
+        self.scoreboards
+            .get_key_value(domain)
+            .map(|(domain, scoreboard)| (domain.as_str(), scoreboard))
+    }
+
     /// Saves every dirty domain scoreboard and returns the number written.
     pub async fn save(&self, worlds: &WorldMap) -> io::Result<usize> {
         let _save_guard = self.save_lock.lock().await;
@@ -591,169 +673,4 @@ fn scoreboard_io_error(domain: &str, error: io::Error) -> io::Error {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::{
-        env::temp_dir,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-    use tokio::fs;
-
-    use steel_utils::saved_data::{SavedDataManager, names as saved_data_names};
-
-    use super::{
-        AsyncMutex, DomainScoreboards, PersistentScoreboard, ScoreHolder, Scoreboard,
-        ScoreboardError,
-    };
-
-    #[test]
-    fn score_value_and_lock_state_are_independent() {
-        let scoreboard = Scoreboard::new();
-        let objective = scoreboard
-            .add_objective("kills")
-            .expect("objective should be added");
-        let holder = ScoreHolder::new("Steve");
-
-        scoreboard
-            .set_score(&holder, &objective, 7)
-            .expect("score should be writable");
-        scoreboard
-            .set_score_locked(&holder, &objective, false)
-            .expect("score lock should change");
-        scoreboard
-            .set_score(&holder, &objective, 9)
-            .expect("score should remain writable");
-
-        let entry = scoreboard
-            .score_entry(&holder, &objective)
-            .expect("score should exist");
-        assert_eq!(entry.value(), 9);
-        assert!(!entry.is_locked());
-    }
-
-    #[test]
-    fn read_only_objective_rejects_score_writes() {
-        let scoreboard = Scoreboard::new();
-        let objective = scoreboard
-            .add_objective_with_read_only("health", true)
-            .expect("objective should be added");
-
-        assert_eq!(
-            scoreboard.set_score(&ScoreHolder::new("Steve"), &objective, 20),
-            Err(ScoreboardError::ReadOnlyObjective("health".to_owned()))
-        );
-    }
-
-    #[test]
-    fn team_assignment_replaces_prior_membership() {
-        let scoreboard = Scoreboard::new();
-        let red = scoreboard
-            .add_team("red")
-            .expect("red team should be added");
-        let blue = scoreboard
-            .add_team("blue")
-            .expect("blue team should be added");
-        let holder = ScoreHolder::new("Steve");
-
-        scoreboard
-            .add_holder_to_team(&holder, &red)
-            .expect("holder should join red");
-        scoreboard
-            .add_holder_to_team(&holder, &blue)
-            .expect("holder should move to blue");
-
-        assert_eq!(
-            scoreboard.holder_team_name(&holder).as_deref(),
-            Some("blue")
-        );
-    }
-
-    #[tokio::test]
-    async fn persisted_scoreboard_round_trips_and_becomes_clean_after_save() {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after Unix epoch")
-            .as_nanos();
-        let path = temp_dir().join(format!("steel-scoreboard-{unique}"));
-        let manager = SavedDataManager::new(Some(&path));
-        let scoreboard = Scoreboard::new();
-        let objective = scoreboard
-            .add_objective("kills")
-            .expect("objective should be added");
-        let holder = ScoreHolder::new("Steve");
-        scoreboard
-            .set_score(&holder, &objective, 5)
-            .expect("score should be writable");
-
-        let snapshot = scoreboard
-            .pending_save()
-            .expect("scoreboard should be dirty");
-        manager
-            .save(saved_data_names::SCOREBOARD, &snapshot.state)
-            .await
-            .expect("scoreboard should save");
-        scoreboard.mark_saved(snapshot.revision);
-        assert!(scoreboard.pending_save().is_none());
-
-        let persistent: PersistentScoreboard = manager
-            .load_or_default(saved_data_names::SCOREBOARD)
-            .await
-            .expect("scoreboard should load");
-        let restored = Scoreboard::from_persistent(persistent).expect("scoreboard should validate");
-        let restored_objective = restored
-            .objective("kills")
-            .expect("objective should persist");
-        assert_eq!(restored.score(&holder, &restored_objective), Some(5));
-
-        fs::remove_dir_all(path)
-            .await
-            .expect("temporary scoreboard directory should be removed");
-    }
-
-    #[test]
-    fn mutation_after_snapshot_remains_dirty_when_snapshot_is_marked_saved() {
-        let scoreboard = Scoreboard::new();
-        scoreboard
-            .add_objective("kills")
-            .expect("objective should be added");
-        let snapshot = scoreboard
-            .pending_save()
-            .expect("scoreboard should be dirty");
-
-        scoreboard
-            .add_objective("deaths")
-            .expect("second objective should be added");
-        scoreboard.mark_saved(snapshot.revision);
-
-        let pending = scoreboard
-            .pending_save()
-            .expect("newer mutation should remain dirty");
-        assert!(pending.revision > snapshot.revision);
-        assert!(pending.state.objectives.contains_key("deaths"));
-    }
-
-    #[test]
-    fn domains_keep_independent_scoreboards() {
-        let scoreboards = DomainScoreboards {
-            scoreboards: [
-                ("alpha".to_owned(), Scoreboard::new()),
-                ("beta".to_owned(), Scoreboard::new()),
-            ]
-            .into_iter()
-            .collect(),
-            save_lock: AsyncMutex::new(()),
-        };
-        scoreboards
-            .get("alpha")
-            .expect("alpha scoreboard should exist")
-            .add_objective("kills")
-            .expect("alpha objective should be added");
-
-        assert!(
-            scoreboards
-                .get("beta")
-                .expect("beta scoreboard should exist")
-                .objective("kills")
-                .is_none()
-        );
-    }
-}
+mod tests;

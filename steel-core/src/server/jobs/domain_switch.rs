@@ -309,6 +309,7 @@ impl DomainSwitchJob {
                 "domain switch lost its residence before target restore installation",
             ));
         }
+        server.send_domain_teams(&self.player, &self.target_domain);
         let pos = self.player.position();
         let rotation = self.player.rotation();
         if !self.player.spawn(pos, rotation, ResetReason::WorldChange) {
@@ -356,7 +357,11 @@ impl DomainSwitchJob {
             PlayerAdmissionState::Relocating,
         );
         server.schedule_domain_restores(&self.player, self.residence_token, restores);
+        self.start_saving_active_domain(server)
+    }
 
+    /// Persists the target as the player's last active domain.
+    fn start_saving_active_domain(&mut self, server: &Arc<Server>) -> JobPoll {
         let (sender, receiver) = mpsc::channel();
         let task_server = Arc::clone(server);
         let task_target_domain = self.target_domain.clone();
