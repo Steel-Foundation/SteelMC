@@ -192,6 +192,13 @@ fn use_filled_bucket(fluid: FluidRef, context: &mut UseItemContext) -> Interacti
             context
                 .world
                 .level_event(level_events::PARTICLES_WATER_EVAPORATING, pos, 0, None);
+            context.world.play_block_sound(
+                &sound_events::BLOCK_FIRE_EXTINGUISH,
+                pos,
+                0.5,
+                2.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.8,
+                Some(context.player.id()),
+            );
             return true;
         }
 
