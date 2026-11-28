@@ -11,7 +11,7 @@ use crate::world::{ScheduledTickAccess, World};
 use std::sync::Arc;
 
 /// Behavior for grass blocks.
-// TODO: Implement bonemeal behavior.
+// TODO: Use biome vegetation features for bone meal during gameplay
 #[block_behavior]
 pub struct GrassBlock {
     block: BlockRef,

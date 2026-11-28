@@ -134,7 +134,8 @@ impl FireworkRocketEntity {
         rocket
     }
 
-    fn initialize_launch(&self, source_item: ItemStack) {
+    /// sets the source item initial motion and lifetime before launch
+    pub(crate) fn initialize_launch(&self, source_item: ItemStack) {
         let flight_count = source_item
             .get(FIREWORKS)
             .map_or(1, |fireworks| 1 + fireworks.flight_duration());

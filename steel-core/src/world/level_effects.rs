@@ -114,6 +114,51 @@ impl World {
         spread: DVec3,
         speed: f64,
     ) -> i32 {
+        self.send_particle_distribution(
+            particle,
+            (override_limiter, always_show),
+            position,
+            count,
+            spread,
+            speed,
+            RandomizationType::default(),
+        )
+    }
+
+    pub(crate) fn send_particles_with_randomization(
+        &self,
+        particle: ParticleData,
+        position: DVec3,
+        count: i32,
+        spread: DVec3,
+        speed: f64,
+        randomization_type: RandomizationType,
+    ) -> i32 {
+        self.send_particle_distribution(
+            particle,
+            (false, false),
+            position,
+            count,
+            spread,
+            speed,
+            randomization_type,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps particle packet fields explicit"
+    )]
+    fn send_particle_distribution(
+        &self,
+        particle: ParticleData,
+        (override_limiter, always_show): (bool, bool),
+        position: DVec3,
+        count: i32,
+        spread: DVec3,
+        speed: f64,
+        randomization_type: RandomizationType,
+    ) -> i32 {
         let packet = CLevelParticles {
             override_limiter,
             always_show,
@@ -128,7 +173,7 @@ impl World {
             z_max_speed: speed as f32,
             count,
             particle,
-            randomization_type: RandomizationType::default(),
+            randomization_type,
         };
         let Ok(encoded) =
             EncodedPacket::from_bare(packet, self.compression, ConnectionProtocol::Play)
@@ -136,6 +181,7 @@ impl World {
             log::warn!("Failed to encode level particles packet");
             return 0;
         };
+
         let mut sent = 0;
         self.players.iter_players(|_, player| {
             if Self::particle_recipient_in_range(
