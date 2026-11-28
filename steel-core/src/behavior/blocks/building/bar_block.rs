@@ -150,7 +150,6 @@ fn connects_to(
     (!excluded && world.is_face_sturdy(neighbor_state, neighbor_pos, direction.opposite()))
         || neighbor_block.has_tag(&BlockTag::BARS)
         || neighbor_block.has_tag(&BlockTag::WALLS)
-        || neighbor_block.has_tag(&BlockTag::C_GLASS_PANES)
 }
 
 /// Gets the connection state for a position by checking all 4 horizontal neighbors.

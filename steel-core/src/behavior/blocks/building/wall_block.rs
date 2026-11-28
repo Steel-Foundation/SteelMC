@@ -159,7 +159,6 @@ fn connects_to(neighbor_state: BlockStateId, face_solid: bool, direction: Direct
     block.has_tag(&BlockTag::WALLS)
         || (!is_excluded_for_connection(block) && face_solid)
         || block.has_tag(&BlockTag::BARS)
-        || block.has_tag(&BlockTag::C_GLASS_PANES)
         || connected_fence_gate
 }
 
