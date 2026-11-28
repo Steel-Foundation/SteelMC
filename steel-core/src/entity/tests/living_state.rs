@@ -1,4 +1,5 @@
 use super::*;
+use crate::entity::component::Component;
 use crate::entity::get_kill_credit;
 use crate::entity::prelude::*;
 use crate::player::{Player, ResetReason};
@@ -369,16 +370,14 @@ fn persistent_living_state_roundtrips_through_nbt() {
     source.living().set_last_hurt_by_player(player_uuid, 55);
 
     let mut nbt = NbtCompound::new();
-    source.living().save_persistent_living_data(&mut nbt);
+    Component::save(&source.living_base, &source, &mut nbt);
     let mut bytes = Vec::new();
     nbt.write(&mut bytes);
     let borrowed = read_compound(&mut Cursor::new(bytes.as_slice()))
         .expect("saved living state should be valid NBT");
 
     let loaded = LivingFluidTestEntity::new(0.0, 0.0, true);
-    loaded
-        .living()
-        .load_persistent_living_data((&borrowed).into());
+    Component::load(&loaded.living_base, &loaded, (&borrowed).into());
 
     assert_eq!(loaded.living().health(), 12.5);
     assert_eq!(loaded.living().max_health(), 30.0);

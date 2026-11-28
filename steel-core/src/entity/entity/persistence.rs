@@ -82,10 +82,10 @@ pub trait EntityPersistence: Entity {
             nbt.insert("data", NbtTag::Compound(custom_data));
         }
 
-        if let Some(living) = self.as_living_entity() {
-            living.save_command_nbt(&mut nbt);
-        }
         self.save_additional(&mut nbt);
+        if let Some(living) = self.as_living_entity() {
+            living.list_every_attribute(&mut nbt);
+        }
 
         if let Some(player) = self.as_player() {
             player.save_command_nbt(&mut nbt);

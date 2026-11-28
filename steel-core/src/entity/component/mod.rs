@@ -5,7 +5,9 @@
 //! classes do into two mechanisms instead of mirroring the hierarchy:
 //!
 //! - **Components** hold one concern's state (age, love, …) and save/load it
-//!   themselves, so a layer's persistent data can never be forgotten.
+//!   themselves, so a layer's persistent data can never be forgotten:
+//!   `#[derive(Entity)]` saves and loads every component of a type, and
+//!   [`Component`] has no default for either.
 //! - **Properties** are the methods vanilla subclasses override, one table of
 //!   `fn` pointers per vanilla class that declares them (`EntityProps`,
 //!   `LivingProps`, `MobProps`, …). A method goes in the table of the class
@@ -29,7 +31,7 @@ pub(crate) mod props;
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
-use steel_utils::{Downcast as _, DowncastType};
+use steel_utils::{Downcast as _, DowncastType, ErasedType};
 
 use crate::entity::Entity;
 
@@ -40,12 +42,15 @@ use crate::entity::Entity;
 /// while calling other entities. Never hold a component's guard across such a
 /// call: vanilla logic re-enters entities constantly, and a held guard turns
 /// that into a panic.
-pub trait Component: DowncastType + Send + Sync {
+///
+/// Saving and loading have no default: a component with nothing to persist
+/// says so with an empty body.
+pub trait Component: ErasedType + Send + Sync {
     /// Writes this component's persistent fields.
-    fn save(&self, _owner: &dyn Entity, _nbt: &mut NbtCompound) {}
+    fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound);
 
     /// Reads this component's persistent fields.
-    fn load(&self, _owner: &dyn Entity, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
+    fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>);
 }
 
 /// Static access to a component the entity type always has.
@@ -66,7 +71,7 @@ pub trait Components {
 
     /// Returns component `C` when this entity has it: the component
     /// equivalent of vanilla's `instanceof` checks.
-    fn query<C: Component>(&self) -> Option<&C>
+    fn query<C: Component + DowncastType>(&self) -> Option<&C>
     where
         Self: Entity,
     {

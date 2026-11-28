@@ -703,14 +703,8 @@ impl<'a> Living<'a> {
         }
     }
 
-    /// Appends the persisted health, damage state, attributes and effects.
-    pub fn save_persistent_living_data(&self, nbt: &mut NbtCompound) {
-        self.save_living_state(nbt);
-        nbt.insert("attributes", self.attributes().lock().to_persistent_nbt());
-    }
-
-    /// Appends the living fields shared by disk saves and command snapshots.
-    fn save_living_state(&self, nbt: &mut NbtCompound) {
+    /// Writes the living state; [`LivingEntityBase`]'s save.
+    pub(crate) fn save_living(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.health());
         nbt.insert("AbsorptionAmount", self.absorption_amount());
         self.living_base().save_damage_state(nbt, self.tick_count());
@@ -741,10 +735,12 @@ impl<'a> Living<'a> {
                 ),
             );
         }
+
+        nbt.insert("attributes", self.attributes().lock().to_persistent_nbt());
     }
 
-    /// Loads the state written by [`Self::save_persistent_living_data`].
-    pub fn load_persistent_living_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    /// Reads the state written by [`Self::save_living`].
+    pub(crate) fn load_living(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.living_base().load_damage_state(nbt, self.tick_count());
         self.attributes().lock().load_vanilla_nbt(nbt);
         self.living_base().load_mob_effects(nbt);
@@ -766,9 +762,10 @@ impl<'a> Living<'a> {
         }
     }
 
-    /// Appends vanilla-shaped living state used by command NBT predicates.
-    pub fn save_command_nbt(&self, nbt: &mut NbtCompound) {
-        self.save_living_state(nbt);
+    /// Lists every attribute in `nbt` for the command NBT view; a save holds
+    /// only the attributes the entity has touched.
+    pub(crate) fn list_every_attribute(&self, nbt: &mut NbtCompound) {
+        nbt.remove("attributes");
         nbt.insert("attributes", self.attributes().lock().to_vanilla_nbt());
     }
 

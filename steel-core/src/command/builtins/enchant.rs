@@ -211,14 +211,12 @@ mod tests {
     use crate::entity::LivingProps;
     use crate::entity::LivingTable;
     use crate::entity::WeakSelf;
+    use crate::entity::component::Component;
     use crate::entity::component::Has;
     use crate::entity::prelude::*;
     use crate::test_support::synced_with_health;
     use std::sync::Weak;
     use steel_registry::vanilla_entity_data::LivingEntityData;
-    use steel_utils::DowncastType as _;
-    use steel_utils::DowncastTypeKey;
-    use steel_utils::ErasedType;
 
     use glam::DVec3;
     use steel_registry::{
@@ -359,8 +357,8 @@ mod tests {
             Some(&self.entity_data)
         }
 
-        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-            (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+        fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+            visit(&self.living_base);
         }
 
         fn base(&self) -> &EntityBase {

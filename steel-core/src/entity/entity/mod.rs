@@ -1,7 +1,7 @@
 //! Vanilla `Entity`: the trait every entity implements, and one function per
 //! method subclasses override holding `Entity`'s own body (`entity::tick`).
 
-use crate::entity::component::Components as _;
+use crate::entity::component::{Component, Components as _};
 use std::collections::BTreeSet;
 
 use super::*;
@@ -262,10 +262,23 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
     /// Gets the entity type containing tracking range, dimensions, etc.
     fn entity_type(&self) -> EntityTypeRef;
 
+    /// Visits each of this entity's components.
+    ///
+    /// `#[derive(Entity)]` visits the `#[entity(component)]` fields. An entity
+    /// type written by hand lists its components here, and lookup, saving and
+    /// loading follow from the list.
+    fn for_each_component<'a>(&'a self, _visit: &mut dyn FnMut(&'a dyn Component)) {}
+
     /// Returns this entity's component whose downcast key is `key`; see
     /// [`Components::query`](crate::entity::component::Components::query).
-    fn erased_component(&self, _key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        None
+    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
+        let mut found: Option<&dyn ErasedType> = None;
+        self.for_each_component(&mut |component| {
+            if found.is_none() && component.downcast_type_key() == key {
+                found = Some(component);
+            }
+        });
+        found
     }
 
     /// Returns a shared handle to this entity, for code that keeps one beyond
@@ -759,18 +772,22 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
 
     // These mirror vanilla's Entity.addAdditionalSaveData/readAdditionalSaveData.
 
-    /// Saves type-specific entity data to NBT.
+    /// Saves everything beyond the base entity fields: each component, then
+    /// what the type itself adds through `#[derive(Entity)]`'s `save` option.
     ///
-    /// Called during chunk serialization. Implementors should save all data
-    /// needed to restore entity state on load. Base fields (pos, motion,
-    /// rotation, uuid, `on_ground`) are handled by the serialization layer.
-    fn save_additional(&self, _nbt: &mut NbtCompound) {}
+    /// Base fields (pos, motion, rotation, uuid, `on_ground`) are handled by
+    /// the serialization layer.
+    fn save_additional(&self, nbt: &mut NbtCompound) {
+        let owner = self.as_entity();
+        self.for_each_component(&mut |component| component.save(owner, nbt));
+    }
 
-    /// Loads type-specific entity data from NBT.
-    ///
-    /// Called after entity creation during chunk deserialization. Base fields
-    /// are already restored; this handles type-specific data.
-    fn load_additional(&self, _nbt: BorrowedNbtCompoundView<'_, '_>) {}
+    /// Loads what [`Self::save_additional`] saved, after the base fields are
+    /// restored.
+    fn load_additional(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        let owner = self.as_entity();
+        self.for_each_component(&mut |component| component.load(owner, nbt));
+    }
 
     // This already exists for structures and AABB whatever that might be, but I also need it for entities, I hope this is the right spot to put it.
     /// Calculates the squared Euclidean distance from this entity's position to the given position.

@@ -223,9 +223,18 @@ fn erased_component_tokens(components: &[&RoleField]) -> Option<TokenStream> {
     if components.is_empty() {
         return None;
     }
-    let idents = components.iter().map(|field| &field.ident);
+    let idents: Vec<&Ident> = components.iter().map(|field| &field.ident).collect();
     let types = components.iter().map(|field| &field.ty);
     Some(quote! {
+        fn for_each_component<'a>(
+            &'a self,
+            visit: &mut dyn FnMut(&'a dyn crate::entity::component::Component),
+        ) {
+            #(
+                visit(&self.#idents);
+            )*
+        }
+
         fn erased_component(
             &self,
             key: ::steel_utils::DowncastTypeKey,
@@ -241,9 +250,14 @@ fn erased_component_tokens(components: &[&RoleField]) -> Option<TokenStream> {
 }
 
 fn persistence_tokens(options: &StructOptions, components: &[&RoleField]) -> Option<TokenStream> {
-    if options.no_save_data
-        || components.is_empty() && options.save.is_none() && options.load.is_none()
-    {
+    if options.no_save_data {
+        return Some(quote! {
+            fn save_additional(&self, _nbt: &mut ::simdnbt::owned::NbtCompound) {}
+
+            fn load_additional(&self, _nbt: ::simdnbt::borrow::NbtCompound<'_, '_>) {}
+        });
+    }
+    if components.is_empty() && options.save.is_none() && options.load.is_none() {
         return None;
     }
     let idents: Vec<&Ident> = components.iter().map(|field| &field.ident).collect();

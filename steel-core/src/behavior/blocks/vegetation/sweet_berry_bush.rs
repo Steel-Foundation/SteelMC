@@ -261,9 +261,9 @@ mod tests {
 
     use super::*;
     use crate::entity::EntityProps;
+    use crate::entity::component::Component;
     use crate::entity::{EntityBase, LivingEntityBase};
     use crate::test_support::test_world;
-    use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestEntity {
         base: EntityBase,
@@ -351,10 +351,10 @@ mod tests {
             self.entity_type
         }
 
-        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-            (key == LivingEntityBase::TYPE_KEY)
-                .then_some(self.living_base.as_ref()?)
-                .map(|base| base as &dyn ErasedType)
+        fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+            if let Some(living_base) = &self.living_base {
+                visit(living_base);
+            }
         }
     }
 

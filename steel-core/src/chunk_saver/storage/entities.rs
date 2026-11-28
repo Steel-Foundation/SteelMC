@@ -161,9 +161,6 @@ impl ChunkStorage {
 
         let mut nbt = NbtCompound::new();
         entity.save_additional(&mut nbt);
-        if let Some(living) = entity.as_living_entity() {
-            living.save_persistent_living_data(&mut nbt);
-        }
         let mut nbt_bytes = Vec::new();
         nbt.write(&mut nbt_bytes);
 

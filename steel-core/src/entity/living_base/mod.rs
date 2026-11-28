@@ -42,7 +42,7 @@ use crate::behavior::MOB_EFFECT_BEHAVIORS;
 use crate::entity::attribute::{AttributeMap, AttributeModifier, AttributeModifierOperation};
 use crate::entity::component::Component;
 use crate::entity::damage::{CombatEntry, CombatTracker, DamageSource, FallLocation};
-use crate::entity::{EntityReference, Living, SharedEntity, WeakEntity};
+use crate::entity::{Entity, EntityReference, Living, SharedEntity, WeakEntity};
 use crate::inventory::equipment::{EntityEquipment, EquipmentSlot, OwnedEntityEquipment};
 use crate::world::World;
 
@@ -823,7 +823,19 @@ unsafe impl DowncastType for LivingEntityBase {
     const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/living");
 }
 
-impl Component for LivingEntityBase {}
+impl Component for LivingEntityBase {
+    fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound) {
+        if let Some(living) = Living::of(owner) {
+            living.save_living(nbt);
+        }
+    }
+
+    fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        if let Some(living) = Living::of(owner) {
+            living.load_living(nbt);
+        }
+    }
+}
 
 #[derive(Debug)]
 struct EquipmentAttributeModifierKey {

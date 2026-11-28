@@ -52,11 +52,11 @@ mod tests {
 
     use super::*;
     use crate::entity::EntityProps;
+    use crate::entity::component::Component;
     use crate::entity::component::Has;
     use crate::entity::{Entity, EntityBase, EntityFluidContact, LivingEntityBase};
     use crate::entity::{EntitySyncedData, MobProps, mob};
     use steel_registry::vanilla_entity_data::MobEntityData;
-    use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
     struct TestPathfinderMob {
         base: EntityBase,
@@ -106,12 +106,9 @@ mod tests {
     }
 
     impl Entity for TestPathfinderMob {
-        fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-            match key {
-                MobBase::TYPE_KEY => Some(&self.mob_base),
-                LivingEntityBase::TYPE_KEY => Some(&self.living_base),
-                _ => None,
-            }
+        fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+            visit(&self.mob_base);
+            visit(&self.living_base);
         }
 
         fn synced_data(&self) -> Option<&dyn EntitySyncedData> {

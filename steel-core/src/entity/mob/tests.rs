@@ -31,6 +31,7 @@ use crate::entity::ai::control::{DEFAULT_LOOK_X_MAX_ROT_ANGLE, DEFAULT_LOOK_Y_MA
 use crate::entity::ai::goal::{Goal, GoalControl, GoalControls};
 use crate::entity::ai::node::Node;
 use crate::entity::ai::path::{Path, PathType};
+use crate::entity::component::Component;
 use crate::entity::component::Has;
 use crate::entity::damage::DamageSource;
 use crate::entity::entities::ChickenEntity;
@@ -51,7 +52,6 @@ use crate::world::{LevelReader, World};
 use steel_registry::vanilla_dimension_types;
 use steel_registry::vanilla_entity_data::MobEntityData;
 use steel_utils::types::UpdateFlags;
-use steel_utils::{DowncastType as _, DowncastTypeKey, ErasedType};
 
 const INITIAL_TEST_HEALTH: f32 = 10.0;
 
@@ -318,12 +318,9 @@ impl EntityTable for DespawnTestMob {
 }
 
 impl Entity for DespawnTestMob {
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        match key {
-            MobBase::TYPE_KEY => Some(&self.mob_base),
-            LivingEntityBase::TYPE_KEY => Some(&self.living_base),
-            _ => None,
-        }
+    fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+        visit(&self.mob_base);
+        visit(&self.living_base);
     }
 
     fn synced_data(&self) -> Option<&dyn EntitySyncedData> {
@@ -391,8 +388,8 @@ impl Entity for HiddenTarget {
         Some(&self.entity_data)
     }
 
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+        visit(&self.living_base);
     }
 
     fn base(&self) -> &EntityBase {

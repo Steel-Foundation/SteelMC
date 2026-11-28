@@ -3,15 +3,13 @@ use crate::entity::EntityTable;
 use crate::entity::LivingProps;
 use crate::entity::LivingTable;
 use crate::entity::WeakSelf;
+use crate::entity::component::Component;
 use crate::entity::component::Has;
 use std::{
     mem,
     sync::{Arc, Weak},
 };
 use steel_registry::vanilla_entity_data::LivingEntityData;
-use steel_utils::DowncastType as _;
-use steel_utils::DowncastTypeKey;
-use steel_utils::ErasedType;
 use steel_utils::locks::CheckedMutex;
 
 use steel_protocol::packets::game::{AttributeSnapshot, EquipmentSlotItem};
@@ -109,8 +107,8 @@ impl Entity for PairingTestEntity {
         Some(&self.entity_data)
     }
 
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+        visit(&self.living_base);
     }
 
     fn base(&self) -> &EntityBase {

@@ -1,3 +1,4 @@
+use crate::entity::component::Component;
 use crate::entity::component::Has;
 use crate::loot::vanilla_loot_tables;
 use crate::test_support::synced_with_health;
@@ -5,8 +6,6 @@ use std::{
     io::Cursor,
     sync::{Arc, Weak},
 };
-use steel_utils::DowncastType as _;
-use steel_utils::DowncastTypeKey;
 
 use glam::DVec3;
 use simdnbt::borrow::read_compound;
@@ -902,8 +901,8 @@ impl EntityTable for LivingFluidTestEntity {
 }
 
 impl Entity for LivingFluidTestEntity {
-    fn erased_component(&self, key: DowncastTypeKey) -> Option<&dyn ErasedType> {
-        (key == LivingEntityBase::TYPE_KEY).then_some(&self.living_base as &dyn ErasedType)
+    fn for_each_component<'a>(&'a self, visit: &mut dyn FnMut(&'a dyn Component)) {
+        visit(&self.living_base);
     }
 
     fn base(&self) -> &EntityBase {

@@ -540,6 +540,7 @@ mod tests {
     use steel_registry::{
         DyeColor, RegistryReference, vanilla_chicken_sound_variants, vanilla_chicken_variants,
         vanilla_cow_sound_variants, vanilla_cow_variants, vanilla_entities, vanilla_items,
+        vanilla_mob_effects,
     };
     use steel_utils::types::Difficulty;
     use text_components::TextComponent;
@@ -547,7 +548,8 @@ mod tests {
     use crate::entity::ageable::BABY_START_AGE;
     use crate::entity::entities::{ChickenEntity, CowEntity, SheepEntity};
     use crate::entity::{
-        Entity, EntitySpawnReason, SharedEntity, init_entities, load_entity_recursive_owned,
+        ActiveMobEffect, Entity, EntitySpawnReason, SharedEntity, init_entities,
+        load_entity_recursive_owned,
     };
     use crate::test_support::{fresh_test_world, insert_ready_full_chunk};
 
@@ -711,6 +713,42 @@ mod tests {
         assert_eq!(
             chicken.custom_name(),
             Some(TextComponent::plain("Existing"))
+        );
+    }
+
+    #[test]
+    fn item_entity_data_overrides_living_state_and_keeps_the_rest() {
+        init_vanilla_registry();
+
+        let chicken = ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new());
+        let entity: SharedEntity = Arc::<ChickenEntity>::clone(&chicken);
+        chicken
+            .living()
+            .add_mob_effect(ActiveMobEffect::with_duration(
+                vanilla_mob_effects::HASTE,
+                100,
+                1,
+            ));
+
+        let mut payload = NbtCompound::new();
+        payload.insert("Health", 1.0_f32);
+        let entity_data = EntityData::new(
+            &vanilla_entities::CHICKEN,
+            CustomData::try_from_compound(payload).expect("test entity data should be valid"),
+        );
+        let mut spawn_egg = ItemStack::new(&vanilla_items::CHICKEN_SPAWN_EGG);
+        spawn_egg.set(ENTITY_DATA, entity_data);
+
+        apply_item_stack_components(&entity, &spawn_egg, false)
+            .expect("valid typed entity data should load");
+
+        assert_eq!(chicken.living().health(), 1.0);
+        assert!(
+            chicken
+                .living()
+                .living_base()
+                .mob_effect(vanilla_mob_effects::HASTE)
+                .is_some()
         );
     }
 
