@@ -1,3 +1,5 @@
+use steel_registry::Tag;
+use steel_registry::blocks::Block;
 use steel_registry::vanilla_block_tags::BlockTag;
 
 use super::super::prelude::*;
@@ -10,7 +12,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
-        let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORAL_BLOCKS)
+        let Some(coral) = Self::random_block_from_tag(registry, random, BlockTag::CORAL_BLOCKS)
         else {
             return false;
         };
@@ -79,7 +81,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
-        let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORAL_BLOCKS)
+        let Some(coral) = Self::random_block_from_tag(registry, random, BlockTag::CORAL_BLOCKS)
         else {
             return false;
         };
@@ -114,7 +116,7 @@ impl FeatureDecorationRunner {
         random: &mut WorldgenRandom,
         origin: BlockPos,
     ) -> bool {
-        let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORAL_BLOCKS)
+        let Some(coral) = Self::random_block_from_tag(registry, random, BlockTag::CORAL_BLOCKS)
         else {
             return false;
         };
@@ -177,7 +179,7 @@ impl FeatureDecorationRunner {
 
         let _ = region.set_block_state(pos, state, UpdateFlags::UPDATE_ALL);
         if random.next_f32() < 0.25 {
-            if let Some(coral) = Self::random_block_from_tag(registry, random, &BlockTag::CORALS) {
+            if let Some(coral) = Self::random_block_from_tag(registry, random, BlockTag::CORALS) {
                 let _ = region.set_block_state(
                     above,
                     coral.default_state(),
@@ -203,7 +205,7 @@ impl FeatureDecorationRunner {
             }
 
             if let Some(coral) =
-                Self::random_block_from_tag(registry, random, &BlockTag::WALL_CORALS)
+                Self::random_block_from_tag(registry, random, BlockTag::WALL_CORALS)
             {
                 let mut coral_fan_state = coral.default_state();
                 if coral_fan_state
@@ -227,7 +229,7 @@ impl FeatureDecorationRunner {
     pub(super) fn random_block_from_tag(
         registry: &Registry,
         random: &mut WorldgenRandom,
-        tag: &Identifier,
+        tag: &Tag<Block>,
     ) -> Option<BlockRef> {
         let blocks = registry.blocks.get_tag(tag)?;
         if blocks.is_empty() {
@@ -235,7 +237,10 @@ impl FeatureDecorationRunner {
         }
 
         let Ok(block_count) = i32::try_from(blocks.len()) else {
-            panic!("block tag {tag} has too many entries to choose randomly");
+            panic!(
+                "block tag {} has too many entries to choose randomly",
+                tag.key()
+            );
         };
         Some(blocks[random.next_i32_bounded(block_count) as usize])
     }

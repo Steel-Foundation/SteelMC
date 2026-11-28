@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(
             saddle_equippable.allowed_entities,
             Some(EquippableAllowedEntities::Tag(
-                EntityTypeTag::CAN_EQUIP_SADDLE
+                EntityTypeTag::CAN_EQUIP_SADDLE.key().clone()
             ))
         );
 

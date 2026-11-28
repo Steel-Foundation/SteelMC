@@ -30,7 +30,7 @@ impl WitherRoseBlock {
 
 impl BlockBehavior for WitherRoseBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        survives_on_tag(world, pos, &BlockTag::SUPPORTS_WITHER_ROSE)
+        survives_on_tag(world, pos, BlockTag::SUPPORTS_WITHER_ROSE)
     }
     fn update_shape(
         &self,

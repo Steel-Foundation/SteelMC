@@ -181,8 +181,9 @@ pub use weeping_vines_block::*;
 pub use weeping_vines_plant_block::*;
 pub use wither_rose_block::*;
 
+use steel_registry::Tag;
 use steel_registry::blocks::properties::Direction;
-use steel_registry::blocks::{BlockRef, block_state_ext::BlockStateExt};
+use steel_registry::blocks::{Block, BlockRef, block_state_ext::BlockStateExt};
 use steel_registry::fluid::FluidState;
 use steel_registry::vanilla_fluids;
 use steel_registry::{vanilla_blocks, vanilla_game_events};
@@ -194,8 +195,6 @@ use crate::behavior::context::BlockPlaceContext;
 use crate::entity::Entity;
 use crate::world::game_event::GameEventContext;
 use crate::world::{LevelReader, World};
-
-pub(super) type BlockTagRef<'a> = &'a steel_utils::Identifier;
 
 /// Turns farmland or a dirt path into dirt.
 pub(crate) fn turn_to_dirt(
@@ -214,11 +213,7 @@ pub(crate) fn turn_to_dirt(
     }
 }
 
-pub(super) fn survives_on_tag(
-    world: &dyn LevelReader,
-    pos: BlockPos,
-    tag: BlockTagRef<'_>,
-) -> bool {
+pub(super) fn survives_on_tag(world: &dyn LevelReader, pos: BlockPos, tag: &Tag<Block>) -> bool {
     let below = world.get_block_state(pos.below());
     below.get_block().has_tag(tag)
 }

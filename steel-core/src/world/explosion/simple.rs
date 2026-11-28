@@ -1,8 +1,10 @@
 //! Explosion damage calculator with a fixed per-explosion policy.
 
+use steel_registry::TagRef;
+use steel_registry::blocks::Block;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::fluid::FluidState;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::entity::Entity;
 use crate::player::Player;
@@ -22,7 +24,7 @@ pub struct SimpleExplosionDamageCalculator {
     knockback_multiplier: Option<f32>,
     /// When set, blocks in this tag fully resist the blast and every other block
     /// offers no resistance at all.
-    immune_blocks: Option<Identifier>,
+    immune_blocks: Option<TagRef<Block>>,
 }
 
 impl SimpleExplosionDamageCalculator {
@@ -32,7 +34,7 @@ impl SimpleExplosionDamageCalculator {
         explodes_blocks: bool,
         damages_entities: bool,
         knockback_multiplier: Option<f32>,
-        immune_blocks: Option<Identifier>,
+        immune_blocks: Option<TagRef<Block>>,
     ) -> Self {
         Self {
             explodes_blocks,

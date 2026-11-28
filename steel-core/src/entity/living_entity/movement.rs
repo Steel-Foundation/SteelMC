@@ -1,5 +1,8 @@
 //! Falling, jumping, gliding, climbing, impulses and pushing.
 
+use steel_registry::Tag;
+use steel_registry::fluid::Fluid;
+
 use super::*;
 
 impl Living<'_> {
@@ -314,7 +317,7 @@ impl Living<'_> {
     }
 
     /// Applies upward velocity to jump out of the given liquid.
-    pub fn jump_in_liquid(&self, _fluid_tag: &Identifier) {
+    pub fn jump_in_liquid(&self, _fluid_tag: &Tag<Fluid>) {
         self.set_velocity(self.velocity() + DVec3::new(0.0, f64::from(0.04_f32), 0.0));
     }
 
@@ -345,10 +348,10 @@ impl Living<'_> {
                     self.set_no_jump_delay(10);
                 }
             } else {
-                self.jump_in_liquid(&vanilla_fluid_tags::FluidTag::LAVA);
+                self.jump_in_liquid(vanilla_fluid_tags::FluidTag::LAVA);
             }
         } else {
-            self.jump_in_liquid(&vanilla_fluid_tags::FluidTag::WATER);
+            self.jump_in_liquid(vanilla_fluid_tags::FluidTag::WATER);
         }
     }
 

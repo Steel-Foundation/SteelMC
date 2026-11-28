@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
 use crate::mob_effect::MobEffectRef;
-use crate::{REGISTRY, RegistryTags, TaggedRegistryExt};
+use crate::{REGISTRY, RegistryTags, TagQuery, TaggedRegistryExt};
 
 /// One base effect supplied by a registered potion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +35,7 @@ impl Potion {
 
     /// Returns `true` if this potion is tagged with the given tag.
     #[must_use]
-    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+    pub fn has_tag(&'static self, tag: &(impl TagQuery<Self> + ?Sized)) -> bool {
         REGISTRY.potions.is_in_tag(self, tag)
     }
 }
@@ -83,12 +83,14 @@ mod tests {
     use steel_utils::Identifier;
 
     use crate::init_vanilla_registry;
-    use crate::{REGISTRY, RegistryExt, TaggedRegistryExt, potion::Potion};
+    use crate::{REGISTRY, RegistryExt, Tag, TaggedRegistryExt, potion::Potion};
 
     static FIRST_DUPLICATE: Potion =
         Potion::new(Identifier::vanilla_static("duplicate"), "duplicate", &[]);
     static SECOND_DUPLICATE: Potion =
         Potion::new(Identifier::vanilla_static("duplicate"), "duplicate", &[]);
+    static TEST_TAG: Tag<Potion> = Tag::vanilla_static("test_tag");
+    static SAME_KEY_TAG: Tag<Potion> = Tag::vanilla_static("test_tag");
 
     #[test]
     fn extracted_potions_follow_vanilla_ids_and_effects() {
@@ -128,18 +130,34 @@ mod tests {
     #[test]
     fn tag_membership_and_iteration_follow_duplicate_key_replacement() {
         let mut registry = super::PotionRegistry::new();
-        let tag = Identifier::vanilla_static("test_tag");
         registry.register(&FIRST_DUPLICATE);
-        registry.register_tag(tag.clone(), &["duplicate"]);
+        registry.register_tag(&TEST_TAG, &["duplicate"]);
         registry.register(&SECOND_DUPLICATE);
 
-        assert!(registry.is_in_tag(&FIRST_DUPLICATE, &tag));
-        assert!(registry.is_in_tag(&SECOND_DUPLICATE, &tag));
-        assert!(
-            registry
-                .iter_tag(&tag)
-                .next()
-                .is_some_and(|entry| std::ptr::eq(entry, &raw const SECOND_DUPLICATE))
-        );
+        for frozen in [false, true] {
+            if frozen {
+                registry.freeze();
+            }
+            assert!(registry.is_in_tag(&FIRST_DUPLICATE, &TEST_TAG));
+            assert!(registry.is_in_tag(&SECOND_DUPLICATE, &TEST_TAG));
+            assert!(
+                registry
+                    .iter_tag(&TEST_TAG)
+                    .next()
+                    .is_some_and(|entry| std::ptr::eq(entry, &raw const SECOND_DUPLICATE))
+            );
+        }
+    }
+
+    #[test]
+    fn tag_is_found_by_key_when_not_the_registered_static() {
+        let mut registry = super::PotionRegistry::new();
+        registry.register(&FIRST_DUPLICATE);
+        registry.register_tag(&TEST_TAG, &["duplicate"]);
+        registry.freeze();
+
+        assert!(registry.is_in_tag(&FIRST_DUPLICATE, &SAME_KEY_TAG));
+        assert!(registry.is_in_tag(&FIRST_DUPLICATE, TEST_TAG.key()));
+        assert!(!registry.is_in_tag(&SECOND_DUPLICATE, &TEST_TAG));
     }
 }

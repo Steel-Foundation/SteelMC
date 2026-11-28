@@ -34,12 +34,12 @@ use steel_registry::data_components::vanilla_components::CUSTOM_NAME;
 use steel_registry::enchantment_effect::EnchantmentEffectComponent;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
-use steel_registry::items::ItemRef;
+use steel_registry::items::{Item, ItemRef};
 use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_block_tags::BlockTag;
 use steel_registry::vanilla_entity_data::MobEntityData;
 use steel_registry::{
-    REGISTRY, RegistryExt, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
+    REGISTRY, RegistryExt, TagRef, TaggedRegistryExt, vanilla_attributes, vanilla_damage_types,
     vanilla_entities, vanilla_entity_type_tags::EntityTypeTag, vanilla_game_events,
     vanilla_game_rules, vanilla_items,
 };
@@ -373,7 +373,7 @@ layer_props! {
         /// `Mob.canBeLeashed`, before the leash state is considered.
         fn mob_can_be_leashed() -> bool;
         /// `Mob.getPreferredWeaponType`: the item tag this mob favors when picking up weapons.
-        fn preferred_weapon_type() -> Option<Identifier>;
+        fn preferred_weapon_type() -> Option<TagRef<Item>>;
         /// `Mob.checkSpawnRules`: the type's own spawn predicate.
         fn check_spawn_rules(world: &Arc<World>, reason: EntitySpawnReason) -> bool;
         /// `Mob.getPickupReach`: how far the item-pickup search box is inflated.
@@ -702,7 +702,7 @@ pub fn mob_can_be_leashed<E: Parts>(entity: &E) -> bool {
 }
 
 /// `Mob`'s [`MobProps::preferred_weapon_type`].
-pub const fn preferred_weapon_type<E: Parts>(_entity: &E) -> Option<Identifier> {
+pub const fn preferred_weapon_type<E: Parts>(_entity: &E) -> Option<TagRef<Item>> {
     None
 }
 

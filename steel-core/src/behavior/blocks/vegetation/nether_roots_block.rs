@@ -1,5 +1,5 @@
 use steel_macros::block_behavior;
-use steel_registry::{vanilla_block_tags::BlockTag, vanilla_blocks};
+use steel_registry::{TagRef, blocks::Block, vanilla_block_tags::BlockTag, vanilla_blocks};
 use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::behavior::block::BlockBehavior;
@@ -23,7 +23,7 @@ impl NetherRootsBlock {
         Self { block }
     }
 
-    fn support_tag(&self) -> steel_utils::Identifier {
+    fn support_tag(&self) -> TagRef<Block> {
         if self.block == &vanilla_blocks::WARPED_ROOTS {
             BlockTag::SUPPORTS_WARPED_ROOTS
         } else {
@@ -47,7 +47,7 @@ impl BlockBehavior for NetherRootsBlock {
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
         let support_tag = self.support_tag();
-        survives_on_tag(world, pos, &support_tag)
+        survives_on_tag(world, pos, support_tag)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

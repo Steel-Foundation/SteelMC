@@ -2,11 +2,12 @@ use std::sync::{Arc, LazyLock};
 
 use rand::{Rng, RngExt};
 use steel_macros::block_behavior;
-use steel_registry::REGISTRY;
+use steel_registry::blocks::Block;
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::feature::{ConfiguredFeature, ConfiguredFeatureKind};
+use steel_registry::{REGISTRY, TagRef};
 use steel_utils::random::worldgen_random::WorldgenRandom;
-use steel_utils::{BlockPos, BlockStateId, Identifier};
+use steel_utils::{BlockPos, BlockStateId};
 
 use crate::behavior::block::BlockBehavior;
 use crate::behavior::blocks::vegetation::bonemealable::Bonemealable;
@@ -27,7 +28,7 @@ pub struct NetherFungusBlock {
     #[json_arg(vanilla_configured_features, json = "feature")]
     feature: &'static LazyLock<ConfiguredFeature>,
     #[json_arg(vanilla_block_tags)]
-    support_blocks: Identifier,
+    support_blocks: TagRef<Block>,
 }
 
 impl NetherFungusBlock {
@@ -37,7 +38,7 @@ impl NetherFungusBlock {
         block: BlockRef,
         required_block: BlockRef,
         feature: &'static LazyLock<ConfiguredFeature>,
-        support_blocks: Identifier,
+        support_blocks: TagRef<Block>,
     ) -> Self {
         Self {
             block,
@@ -50,7 +51,7 @@ impl NetherFungusBlock {
 
 impl BlockBehavior for NetherFungusBlock {
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        survives_on_tag(world, pos, &self.support_blocks)
+        survives_on_tag(world, pos, self.support_blocks)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

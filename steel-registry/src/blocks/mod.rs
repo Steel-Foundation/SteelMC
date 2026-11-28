@@ -20,7 +20,7 @@ use crate::blocks::behavior::BlockConfig;
 use crate::blocks::properties::Property;
 use crate::blocks::shapes::ShapeChannel;
 use crate::fluid::{FluidRef, FluidState};
-use crate::{RegistryExt, RegistryTags, TaggedRegistryExt};
+use crate::{RegistryExt, RegistryTags, TagQuery, TaggedRegistryExt};
 use steel_utils::{BlockPos, BlockStateId, DowncastType, DowncastTypeKey};
 
 /// Function type for shape lookups. Takes a state offset and returns the shape.
@@ -440,7 +440,7 @@ impl Block {
     }
 
     /// Returns `true` if this block is tagged with the given tag.
-    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+    pub fn has_tag(&'static self, tag: &(impl TagQuery<Self> + ?Sized)) -> bool {
         crate::REGISTRY.blocks.is_in_tag(self, tag)
     }
 }
@@ -1220,7 +1220,7 @@ use steel_utils::Identifier;
 mod tests {
     use super::*;
     use crate::blocks::properties::{BlockStateProperties, Direction};
-    use crate::vanilla_blocks;
+    use crate::{Tag, vanilla_blocks};
 
     fn create_test_registry() -> BlockRegistry {
         let mut registry = BlockRegistry::new();
@@ -1233,11 +1233,10 @@ mod tests {
     fn tag_modification_keeps_order_and_membership_in_sync() {
         let mut registry = BlockRegistry::new();
         vanilla_blocks::register_blocks(&mut registry);
-        let tag = Identifier::new_static("test", "ordered_membership");
-        registry.register_tag(
-            Identifier::new_static("test", "ordered_membership"),
-            &["stone", "dirt"],
-        );
+        static ORDERED_MEMBERSHIP: Tag<Block> =
+            Tag::new(Identifier::new_static("test", "ordered_membership"));
+        let tag = ORDERED_MEMBERSHIP.key();
+        registry.register_tag(&ORDERED_MEMBERSHIP, &["stone", "dirt"]);
 
         assert!(registry.is_in_tag(&vanilla_blocks::STONE, &tag));
         assert_eq!(
@@ -1248,7 +1247,7 @@ mod tests {
             ["stone", "dirt"]
         );
 
-        registry.modify_tag(&tag, |_| {
+        registry.modify_tag(tag, |_| {
             vec![
                 Identifier::vanilla_static("oak_log"),
                 Identifier::vanilla_static("dirt"),

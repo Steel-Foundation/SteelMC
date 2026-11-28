@@ -3,15 +3,16 @@ use std::sync::Arc;
 use rand::{Rng, RngExt};
 use steel_macros::block_behavior;
 use steel_registry::{
+    TagRef,
     blocks::{
-        BlockRef,
+        Block, BlockRef,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, EnumProperty, IntProperty},
     },
     item_stack::ItemStack,
     items::ItemRef,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, Identifier, types::UpdateFlags};
+use steel_utils::{BlockPos, BlockStateId, Direction, types::UpdateFlags};
 
 use crate::{
     behavior::{
@@ -42,9 +43,9 @@ pub struct StemBlock {
     #[json_arg(vanilla_items)]
     seed: ItemRef,
     #[json_arg(vanilla_block_tags)]
-    stem_support_blocks: Identifier,
+    stem_support_blocks: TagRef<Block>,
     #[json_arg(vanilla_block_tags)]
-    fruit_support_blocks: Identifier,
+    fruit_support_blocks: TagRef<Block>,
 }
 
 impl StemBlock {
@@ -55,8 +56,8 @@ impl StemBlock {
         fruit: BlockRef,
         attached_stem: BlockRef,
         seed: ItemRef,
-        stem_support_blocks: Identifier,
-        fruit_support_blocks: Identifier,
+        stem_support_blocks: TagRef<Block>,
+        fruit_support_blocks: TagRef<Block>,
     ) -> Self {
         Self {
             block,

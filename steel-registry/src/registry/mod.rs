@@ -8,7 +8,7 @@ mod tags;
 pub use holder::{RegistryHolder, RegistryHolderEntry};
 pub use holder_set::{RegistryHolderSet, RegistryHolderSetEntry};
 pub use reference::{RegistryReference, RegistryReferenceEntry};
-pub use tags::RegistryTags;
+pub use tags::{RegistryTags, Tag, TagQuery, TagRef};
 
 use crate::advancement::registry::AdvancementRegistry;
 use crate::game_events::GameEventRegistry;
@@ -193,11 +193,21 @@ pub trait SoundVariantRegistry: RegistryExt {
 
 /// Trait for registries that support tagging entries.
 pub trait TaggedRegistryExt: RegistryExt {
-    fn register_tag(&mut self, tag: Identifier, keys: &[&'static str]);
+    fn register_tag(&mut self, tag: TagRef<Self::Entry>, keys: &[&'static str]);
     fn modify_tag(&mut self, tag: &Identifier, f: impl FnOnce(Vec<Identifier>) -> Vec<Identifier>);
-    fn is_in_tag(&self, entry: &'static Self::Entry, tag: &Identifier) -> bool;
-    fn get_tag(&self, tag: &Identifier) -> Option<Vec<&'static Self::Entry>>;
-    fn iter_tag(&self, tag: &Identifier) -> impl Iterator<Item = &'static Self::Entry> + '_;
+    fn is_in_tag(
+        &self,
+        entry: &'static Self::Entry,
+        tag: &(impl TagQuery<Self::Entry> + ?Sized),
+    ) -> bool;
+    fn get_tag(
+        &self,
+        tag: &(impl TagQuery<Self::Entry> + ?Sized),
+    ) -> Option<Vec<&'static Self::Entry>>;
+    fn iter_tag(
+        &self,
+        tag: &(impl TagQuery<Self::Entry> + ?Sized),
+    ) -> impl Iterator<Item = &'static Self::Entry> + '_;
     fn tag_keys(&self) -> impl Iterator<Item = &Identifier> + '_;
 }
 

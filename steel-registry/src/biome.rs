@@ -5,9 +5,9 @@ use simdnbt::ToNbtTag;
 use simdnbt::owned::NbtTag;
 use steel_utils::Identifier;
 
-use crate::TaggedRegistryExt;
 use crate::sound_event::SoundEventRef;
 use crate::{REGISTRY, RegistryTags};
+use crate::{TagQuery, TaggedRegistryExt};
 
 #[derive(Debug)]
 pub struct Biome {
@@ -28,7 +28,7 @@ pub struct Biome {
 
 impl Biome {
     /// Returns `true` if this biome is tagged with the given tag.
-    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+    pub fn has_tag(&'static self, tag: &(impl TagQuery<Self> + ?Sized)) -> bool {
         REGISTRY.biomes.is_in_tag(self, tag)
     }
 }

@@ -102,7 +102,7 @@ impl StructurePiecePlacer {
                 mossiness: properties.mossiness,
             },
             StructureProcessorKind::ProtectedBlocks {
-                cannot_replace: BlockTag::FEATURES_CANNOT_REPLACE,
+                cannot_replace: BlockTag::FEATURES_CANNOT_REPLACE.key().clone(),
             },
             StructureProcessorKind::LavaSubmergedBlock,
         ];

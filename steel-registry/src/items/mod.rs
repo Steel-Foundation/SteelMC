@@ -8,7 +8,7 @@ use text_components::TextComponent;
 pub mod item;
 
 use crate::{
-    REGISTRY, RegistryExt, RegistryTags, TaggedRegistryExt,
+    REGISTRY, RegistryExt, RegistryTags, TagQuery, TaggedRegistryExt,
     blocks::BlockRef,
     data_components::{
         DataComponentMap,
@@ -103,7 +103,7 @@ impl Item {
     }
 
     /// Returns `true` if this item is tagged with the given tag.
-    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+    pub fn has_tag(&'static self, tag: &(impl TagQuery<Self> + ?Sized)) -> bool {
         REGISTRY.items.is_in_tag(self, tag)
     }
 }

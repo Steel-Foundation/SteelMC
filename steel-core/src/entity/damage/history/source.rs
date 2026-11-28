@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use glam::DVec3;
-use steel_registry::{REGISTRY, TaggedRegistryExt, damage_type::DamageType};
-use steel_utils::Identifier;
+use steel_registry::{REGISTRY, TagQuery, TaggedRegistryExt, damage_type::DamageType};
 
 use super::DamageSource;
 use crate::entity::{EntityGeneration, SharedEntity, WeakEntity};
@@ -107,7 +106,7 @@ impl RecentDamageSource {
 
     /// Tests the original damage type's tag membership.
     #[must_use]
-    pub fn is(&self, tag: &Identifier) -> bool {
+    pub fn is(&self, tag: &(impl TagQuery<DamageType> + ?Sized)) -> bool {
         REGISTRY.damage_types.is_in_tag(self.damage_type, tag)
     }
 

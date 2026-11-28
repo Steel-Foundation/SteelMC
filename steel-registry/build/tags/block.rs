@@ -36,9 +36,8 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::blocks::BlockRegistry;
-        use crate::TaggedRegistryExt;
-        use steel_utils::Identifier;
+        use crate::blocks::{Block, BlockRegistry};
+        use crate::{Tag, TagRef, TaggedRegistryExt};
     });
 
     let mut register_stream = TokenStream::new();
@@ -58,15 +57,23 @@ pub(crate) fn build() -> TokenStream {
         let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
         let tag_key = tag_name.clone();
 
+        let tag_static = Ident::new(
+            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
+            Span::call_site(),
+        );
         if let Some(key) = tag_key.strip_prefix("c:") {
-            const_identifier.extend(
-                quote! { pub const #tag_ident: Identifier = Identifier::new_static("c", #key); },
-            );
+            static_array.extend(quote! {
+                static #tag_static: Tag<Block> =
+                    Tag::new(steel_utils::Identifier::new_static("c", #key));
+            });
         } else {
-            const_identifier.extend(
-                quote! {pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);},
-            );
+            static_array.extend(quote! {
+                static #tag_static: Tag<Block> = Tag::vanilla_static(#tag_key);
+            });
         }
+        const_identifier.extend(quote! {
+            pub const #tag_ident: TagRef<Block> = &#tag_static;
+        });
         register_stream.extend(quote! {
             registry.register_tag(
                 Self::#tag_ident,

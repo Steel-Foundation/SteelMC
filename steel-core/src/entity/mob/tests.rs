@@ -11,12 +11,13 @@ use steel_registry::vanilla_entity_data::LivingEntityData;
 use glam::DVec3;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::item_stack::ItemStack;
+use steel_registry::items::Item;
 use steel_registry::vanilla_entities;
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
 use steel_registry::{
-    REGISTRY, init_vanilla_registry, vanilla_attributes, vanilla_blocks, vanilla_damage_types,
-    vanilla_world_clocks,
+    REGISTRY, TagRef, init_vanilla_registry, vanilla_attributes, vanilla_blocks,
+    vanilla_damage_types, vanilla_world_clocks,
 };
 use steel_utils::locks::SyncMutex;
 use steel_utils::{BlockPos, BlockStateId, ChunkPos, Downcast as _, Identifier};
@@ -188,7 +189,7 @@ struct DespawnTestMob {
     nearest_player_distance_sqr: Option<f64>,
     remove_when_far_away: bool,
     controlling_passenger: SyncMutex<Option<SharedEntity>>,
-    preferred_weapon_type: SyncMutex<Option<Identifier>>,
+    preferred_weapon_type: SyncMutex<Option<TagRef<Item>>>,
     can_be_leashed: SyncMutex<bool>,
 }
 
@@ -289,7 +290,7 @@ impl DespawnTestMob {
         })
     }
 
-    fn set_preferred_weapon_type(&self, tag: Identifier) {
+    fn set_preferred_weapon_type(&self, tag: TagRef<Item>) {
         *self.preferred_weapon_type.lock() = Some(tag);
     }
 
@@ -304,7 +305,7 @@ impl MobTable for DespawnTestMob {
     const MOB: MobProps<Self> = MobProps {
         is_pathfinder: |_| true,
         remove_when_far_away: |mob, _| mob.remove_when_far_away,
-        preferred_weapon_type: |mob| mob.preferred_weapon_type.lock().clone(),
+        preferred_weapon_type: |mob| *mob.preferred_weapon_type.lock(),
         mob_can_be_leashed: |mob| *mob.can_be_leashed.lock(),
         ..MobProps::new()
     };

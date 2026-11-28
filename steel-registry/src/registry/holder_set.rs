@@ -299,7 +299,7 @@ mod tests {
     fn persistent_codec_matches_vanilla_holder_set_shapes() {
         init_vanilla_registry();
 
-        let tag = RegistryHolderSet::<Item>::Tag(ItemTag::WOOL);
+        let tag = RegistryHolderSet::<Item>::Tag(ItemTag::WOOL.key().clone());
         assert_eq!(
             tag.clone().to_nbt_tag(),
             NbtTag::String("#minecraft:wool".into())
@@ -312,7 +312,7 @@ mod tests {
             Some(tag)
         );
         assert_eq!(
-            RegistryHolderSet::<Item>::Tag(ItemTag::WOOL).compute_hash(),
+            RegistryHolderSet::<Item>::Tag(ItemTag::WOOL.key().clone()).compute_hash(),
             NbtTag::String("#minecraft:wool".into()).compute_hash()
         );
 
@@ -357,7 +357,7 @@ mod tests {
         init_vanilla_registry();
 
         for holder_set in [
-            RegistryHolderSet::<Item>::Tag(ItemTag::WOOL),
+            RegistryHolderSet::<Item>::Tag(ItemTag::WOOL.key().clone()),
             RegistryHolderSet::Direct(vec![&vanilla_items::STICK, &vanilla_items::DIAMOND]),
             RegistryHolderSet::Direct(Vec::new()),
         ] {
@@ -410,7 +410,7 @@ mod tests {
     fn contains_resolves_tags_and_direct_entries() {
         init_vanilla_registry();
 
-        let tag = RegistryHolderSet::<Item>::Tag(ItemTag::WOOL);
+        let tag = RegistryHolderSet::<Item>::Tag(ItemTag::WOOL.key().clone());
         assert!(tag.contains(&vanilla_items::WHITE_WOOL));
         assert!(!tag.contains(&vanilla_items::STICK));
 

@@ -1,14 +1,15 @@
 use steel_macros::block_behavior;
 use steel_registry::{
+    TagRef,
     blocks::{
-        BlockRef,
+        Block, BlockRef,
         block_state_ext::BlockStateExt,
         properties::{BlockStateProperties, EnumProperty, IntProperty},
     },
     item_stack::ItemStack,
     items::ItemRef,
 };
-use steel_utils::{BlockPos, BlockStateId, Direction, Identifier};
+use steel_utils::{BlockPos, BlockStateId, Direction};
 
 use crate::{
     behavior::{
@@ -37,7 +38,7 @@ pub struct AttachedStemBlock {
     #[json_arg(vanilla_items)]
     seed: ItemRef,
     #[json_arg(vanilla_block_tags)]
-    support_blocks: Identifier,
+    support_blocks: TagRef<Block>,
 }
 
 impl AttachedStemBlock {
@@ -48,7 +49,7 @@ impl AttachedStemBlock {
         stem: BlockRef,
         fruit: BlockRef,
         seed: ItemRef,
-        support_blocks: Identifier,
+        support_blocks: TagRef<Block>,
     ) -> Self {
         Self {
             block,

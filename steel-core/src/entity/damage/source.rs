@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use glam::DVec3;
 use steel_registry::{
-    REGISTRY, TaggedRegistryExt, damage_type::DamageScaling, damage_type::DamageType,
+    REGISTRY, TagQuery, TaggedRegistryExt, damage_type::DamageScaling, damage_type::DamageType,
     data_components::vanilla_components::CUSTOM_NAME, vanilla_damage_type_tags,
     vanilla_damage_types,
 };
@@ -133,7 +133,7 @@ impl DamageSource {
 
     /// Returns whether this damage type is in the given vanilla damage-type tag.
     #[must_use]
-    pub fn is(&self, tag: &steel_utils::Identifier) -> bool {
+    pub fn is(&self, tag: &(impl TagQuery<DamageType> + ?Sized)) -> bool {
         REGISTRY.damage_types.is_in_tag(self.damage_type, tag)
     }
 

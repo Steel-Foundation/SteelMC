@@ -114,7 +114,8 @@ pub fn resolve_all_tags(all_tags: &FxHashMap<String, Vec<String>>) -> Vec<(Strin
 
 /// Builds a complete tag module for a vanilla-only registry.
 ///
-/// Generates: static tag arrays, `pub const` tag identifiers, and a register function.
+/// Generates: static tag arrays, tag statics with their `pub const` references, and a
+/// register function.
 ///
 /// - `tag_subdir`: directory under `tags/` (e.g., `"damage_type"`)
 /// - `registry_module`: crate module name (e.g., `"damage_type"`)
@@ -147,8 +148,9 @@ pub fn build_simple_tags(
 
     stream.extend(quote! {
         use crate::#registry_module_ident::#registry_type_ident;
-        use crate::TaggedRegistryExt;
-        use steel_utils::Identifier;
+        use crate::{RegistryExt, Tag, TagRef, TaggedRegistryExt};
+
+        type Entry = <#registry_type_ident as RegistryExt>::Entry;
     });
 
     let mut static_arrays = TokenStream::new();
@@ -161,16 +163,21 @@ pub fn build_simple_tags(
             Span::call_site(),
         );
         let tag_ident = Ident::new(&tag_name.to_shouty_snake_case(), Span::call_site());
+        let tag_static = Ident::new(
+            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
+            Span::call_site(),
+        );
 
         let entry_strs = entries.iter().map(std::string::String::as_str);
         let tag_key = tag_name.as_str();
 
         static_arrays.extend(quote! {
             static #tag_list_ident: &[&str] = &[#(#entry_strs),*];
+            static #tag_static: Tag<Entry> = Tag::vanilla_static(#tag_key);
         });
 
         const_identifiers.extend(quote! {
-            pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);
+            pub const #tag_ident: TagRef<Entry> = &#tag_static;
         });
 
         register_stream.extend(quote! {

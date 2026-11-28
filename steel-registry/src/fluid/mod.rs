@@ -1,7 +1,8 @@
 //! Fluid registry for Minecraft fluids.
 
 use crate::{
-    RegistryExt, RegistryTags, TaggedRegistryExt, vanilla_fluid_tags::FluidTag, vanilla_fluids,
+    RegistryExt, RegistryTags, TagQuery, TaggedRegistryExt, vanilla_fluid_tags::FluidTag,
+    vanilla_fluids,
 };
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
@@ -32,7 +33,7 @@ pub struct Fluid {
 impl Fluid {
     /// Returns `true` if this fluid is tagged with the given tag.
     #[must_use]
-    pub fn has_tag(&'static self, tag: &Identifier) -> bool {
+    pub fn has_tag(&'static self, tag: &(impl TagQuery<Self> + ?Sized)) -> bool {
         REGISTRY.fluids.is_in_tag(self, tag)
     }
 

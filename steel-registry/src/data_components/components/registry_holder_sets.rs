@@ -169,7 +169,8 @@ mod tests {
     fn damage_resistant_uses_the_vanilla_record_and_holder_set_codecs() {
         init_vanilla_registry();
 
-        let component = DamageResistant::new(RegistryHolderSet::Tag(DamageTypeTag::IS_FIRE));
+        let component =
+            DamageResistant::new(RegistryHolderSet::Tag(DamageTypeTag::IS_FIRE.key().clone()));
         assert!(component.is_resistant_to(&vanilla_damage_types::IN_FIRE));
         assert!(!component.is_resistant_to(&vanilla_damage_types::GENERIC));
         assert_eq!(
@@ -194,7 +195,9 @@ mod tests {
     fn repairable_accepts_tagged_and_direct_repair_items() {
         init_vanilla_registry();
 
-        let wooden = Repairable::new(RegistryHolderSet::Tag(ItemTag::WOODEN_TOOL_MATERIALS));
+        let wooden = Repairable::new(RegistryHolderSet::Tag(
+            ItemTag::WOODEN_TOOL_MATERIALS.key().clone(),
+        ));
         assert!(wooden.is_valid_repair_item(&ItemStack::new(&vanilla_items::OAK_PLANKS)));
         assert!(!wooden.is_valid_repair_item(&ItemStack::new(&vanilla_items::DIAMOND)));
 
@@ -220,7 +223,8 @@ mod tests {
     fn provides_banner_patterns_uses_fixed_registry_holder_sets() {
         init_vanilla_registry();
 
-        let component = ProvidesBannerPatterns::Tag(BannerPatternTag::PATTERN_ITEM_FLOWER);
+        let component =
+            ProvidesBannerPatterns::Tag(BannerPatternTag::PATTERN_ITEM_FLOWER.key().clone());
         assert!(component.contains(&vanilla_banner_patterns::FLOWER));
         assert_eq!(
             component.clone().to_nbt_tag(),

@@ -146,7 +146,7 @@ macro_rules! impl_registry {
 macro_rules! impl_tagged_registry {
     ($Registry:ty, $key_field:ident, $entity_name:literal) => {
         impl $crate::TaggedRegistryExt for $Registry {
-            fn register_tag(&mut self, tag: steel_utils::Identifier, keys: &[&'static str]) {
+            fn register_tag(&mut self, tag: $crate::TagRef<Self::Entry>, keys: &[&'static str]) {
                 assert!(
                     self.allows_registering,
                     "Cannot register tags after registry has been frozen"
@@ -160,7 +160,7 @@ macro_rules! impl_tagged_registry {
                     })
                     .collect();
 
-                self.tags.insert(tag, entry_keys);
+                self.tags.insert_tag(tag, entry_keys);
             }
 
             fn modify_tag(
@@ -170,10 +170,10 @@ macro_rules! impl_tagged_registry {
             ) {
                 let existing = self
                     .tags
-                    .remove(tag)
+                    .get::<Self::Entry>(tag)
                     .unwrap_or_default()
-                    .into_iter()
-                    .cloned()
+                    .iter()
+                    .map(|key| (*key).clone())
                     .collect();
                 let entry_keys = f(existing)
                     .into_iter()
@@ -193,12 +193,20 @@ macro_rules! impl_tagged_registry {
                 self.tags.insert(tag.clone(), entry_keys);
             }
 
-            fn is_in_tag(&self, entry: &Self::Entry, tag: &steel_utils::Identifier) -> bool {
-                self.tags.contains(tag, $crate::RegistryEntry::key(entry))
+            fn is_in_tag(
+                &self,
+                entry: &'static Self::Entry,
+                tag: &(impl $crate::TagQuery<Self::Entry> + ?Sized),
+            ) -> bool {
+                let frozen_registry = (!self.allows_registering).then_some(self);
+                self.tags.contains(tag, entry, frozen_registry)
             }
 
-            fn get_tag(&self, tag: &steel_utils::Identifier) -> Option<Vec<&'static Self::Entry>> {
-                self.tags.get(tag).map(|entry_keys| {
+            fn get_tag(
+                &self,
+                tag: &(impl $crate::TagQuery<Self::Entry> + ?Sized),
+            ) -> Option<Vec<&'static Self::Entry>> {
+                self.tags.get::<Self::Entry>(tag).map(|entry_keys| {
                     entry_keys
                         .iter()
                         .filter_map(|key| $crate::RegistryExt::by_key(self, key))
@@ -208,13 +216,16 @@ macro_rules! impl_tagged_registry {
 
             fn iter_tag(
                 &self,
-                tag: &steel_utils::Identifier,
+                tag: &(impl $crate::TagQuery<Self::Entry> + ?Sized),
             ) -> impl Iterator<Item = &'static Self::Entry> + '_ {
-                self.tags.get(tag).into_iter().flat_map(|entry_keys| {
-                    entry_keys
-                        .iter()
-                        .filter_map(|key| $crate::RegistryExt::by_key(self, key))
-                })
+                self.tags
+                    .get::<Self::Entry>(tag)
+                    .into_iter()
+                    .flat_map(|entry_keys| {
+                        entry_keys
+                            .iter()
+                            .filter_map(|key| $crate::RegistryExt::by_key(self, key))
+                    })
             }
 
             fn tag_keys(&self) -> impl Iterator<Item = &steel_utils::Identifier> + '_ {

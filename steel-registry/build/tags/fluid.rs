@@ -13,9 +13,8 @@ pub(crate) fn build() -> TokenStream {
     let mut stream = TokenStream::new();
 
     stream.extend(quote! {
-        use crate::fluid::FluidRegistry;
-        use crate::TaggedRegistryExt;
-        use steel_utils::Identifier;
+        use crate::fluid::{Fluid, FluidRegistry};
+        use crate::{Tag, TagRef, TaggedRegistryExt};
     });
 
     let mut register_stream = TokenStream::new();
@@ -32,10 +31,17 @@ pub(crate) fn build() -> TokenStream {
         stream.extend(quote! {
             static #tag_array: &[&str] = &[#(#fluid_strs),*];
         });
+        let tag_static = Ident::new(
+            &format!("{}_TAG", tag_name.to_shouty_snake_case()),
+            Span::call_site(),
+        );
         let tag_key = tag_name.clone();
 
+        stream.extend(quote! {
+            static #tag_static: Tag<Fluid> = Tag::vanilla_static(#tag_key);
+        });
         tag_stream.extend(quote! {
-            pub const #tag_ident: Identifier = Identifier::vanilla_static(#tag_key);
+            pub const #tag_ident: TagRef<Fluid> = &#tag_static;
         });
         register_stream.extend(quote! {
             registry.register_tag(

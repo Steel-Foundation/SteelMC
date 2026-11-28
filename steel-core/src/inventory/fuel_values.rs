@@ -5,8 +5,7 @@ use std::sync::LazyLock;
 use steel_registry::items::{Item, ItemRef};
 use steel_registry::vanilla_item_tags::ItemTag;
 use steel_registry::vanilla_items;
-use steel_registry::{REGISTRY, RegistryEntry as _, RegistryExt as _, TaggedRegistryExt as _};
-use steel_utils::Identifier;
+use steel_registry::{REGISTRY, RegistryEntry as _, RegistryExt as _, Tag, TaggedRegistryExt as _};
 
 /// Fuel durations indexed by item registry ID.
 pub struct FuelValues {
@@ -50,7 +49,7 @@ impl FuelValuesBuilder {
 
     /// Assigns every item in a tag a burn duration.
     #[must_use]
-    pub fn add_tag(mut self, tag: &Identifier, burn_duration: i32) -> Self {
+    pub fn add_tag(mut self, tag: &Tag<Item>, burn_duration: i32) -> Self {
         for item in REGISTRY.items.iter_tag(tag) {
             self.put(item, burn_duration);
         }
@@ -59,7 +58,7 @@ impl FuelValuesBuilder {
 
     /// Removes every item in a tag from the table.
     #[must_use]
-    pub fn remove_tag(mut self, tag: &Identifier) -> Self {
+    pub fn remove_tag(mut self, tag: &Tag<Item>) -> Self {
         for item in REGISTRY.items.iter_tag(tag) {
             self.put(item, 0);
         }
@@ -90,19 +89,19 @@ pub static VANILLA_FUEL_VALUES: LazyLock<FuelValues> = LazyLock::new(|| {
         .add(&vanilla_items::BLAZE_ROD, BASE * 12)
         .add(&vanilla_items::COAL, BASE * 8)
         .add(&vanilla_items::CHARCOAL, BASE * 8)
-        .add_tag(&ItemTag::LOGS, BASE * 3 / 2)
-        .add_tag(&ItemTag::BAMBOO_BLOCKS, BASE * 3 / 2)
-        .add_tag(&ItemTag::PLANKS, BASE * 3 / 2)
+        .add_tag(ItemTag::LOGS, BASE * 3 / 2)
+        .add_tag(ItemTag::BAMBOO_BLOCKS, BASE * 3 / 2)
+        .add_tag(ItemTag::PLANKS, BASE * 3 / 2)
         .add(&vanilla_items::BAMBOO_MOSAIC, BASE * 3 / 2)
-        .add_tag(&ItemTag::WOODEN_STAIRS, BASE * 3 / 2)
+        .add_tag(ItemTag::WOODEN_STAIRS, BASE * 3 / 2)
         .add(&vanilla_items::BAMBOO_MOSAIC_STAIRS, BASE * 3 / 2)
-        .add_tag(&ItemTag::WOODEN_SLABS, BASE * 3 / 4)
+        .add_tag(ItemTag::WOODEN_SLABS, BASE * 3 / 4)
         .add(&vanilla_items::BAMBOO_MOSAIC_SLAB, BASE * 3 / 4)
-        .add_tag(&ItemTag::WOODEN_TRAPDOORS, BASE * 3 / 2)
-        .add_tag(&ItemTag::WOODEN_PRESSURE_PLATES, BASE * 3 / 2)
-        .add_tag(&ItemTag::WOODEN_SHELVES, BASE * 3 / 2)
-        .add_tag(&ItemTag::WOODEN_FENCES, BASE * 3 / 2)
-        .add_tag(&ItemTag::FENCE_GATES, BASE * 3 / 2)
+        .add_tag(ItemTag::WOODEN_TRAPDOORS, BASE * 3 / 2)
+        .add_tag(ItemTag::WOODEN_PRESSURE_PLATES, BASE * 3 / 2)
+        .add_tag(ItemTag::WOODEN_SHELVES, BASE * 3 / 2)
+        .add_tag(ItemTag::WOODEN_FENCES, BASE * 3 / 2)
+        .add_tag(ItemTag::FENCE_GATES, BASE * 3 / 2)
         .add(&vanilla_items::NOTE_BLOCK, BASE * 3 / 2)
         .add(&vanilla_items::BOOKSHELF, BASE * 3 / 2)
         .add(&vanilla_items::CHISELED_BOOKSHELF, BASE * 3 / 2)
@@ -112,26 +111,26 @@ pub static VANILLA_FUEL_VALUES: LazyLock<FuelValues> = LazyLock::new(|| {
         .add(&vanilla_items::TRAPPED_CHEST, BASE * 3 / 2)
         .add(&vanilla_items::CRAFTING_TABLE, BASE * 3 / 2)
         .add(&vanilla_items::DAYLIGHT_DETECTOR, BASE * 3 / 2)
-        .add_tag(&ItemTag::BANNERS, BASE * 3 / 2)
+        .add_tag(ItemTag::BANNERS, BASE * 3 / 2)
         .add(&vanilla_items::BOW, BASE * 3 / 2)
         .add(&vanilla_items::FISHING_ROD, BASE * 3 / 2)
         .add(&vanilla_items::LADDER, BASE * 3 / 2)
-        .add_tag(&ItemTag::SIGNS, BASE)
-        .add_tag(&ItemTag::HANGING_SIGNS, BASE * 4)
+        .add_tag(ItemTag::SIGNS, BASE)
+        .add_tag(ItemTag::HANGING_SIGNS, BASE * 4)
         .add(&vanilla_items::WOODEN_SHOVEL, BASE)
         .add(&vanilla_items::WOODEN_SWORD, BASE)
         .add(&vanilla_items::WOODEN_SPEAR, BASE)
         .add(&vanilla_items::WOODEN_HOE, BASE)
         .add(&vanilla_items::WOODEN_AXE, BASE)
         .add(&vanilla_items::WOODEN_PICKAXE, BASE)
-        .add_tag(&ItemTag::WOODEN_DOORS, BASE)
-        .add_tag(&ItemTag::BOATS, BASE * 6)
-        .add_tag(&ItemTag::WOOL, BASE / 2)
-        .add_tag(&ItemTag::WOODEN_BUTTONS, BASE / 2)
+        .add_tag(ItemTag::WOODEN_DOORS, BASE)
+        .add_tag(ItemTag::BOATS, BASE * 6)
+        .add_tag(ItemTag::WOOL, BASE / 2)
+        .add_tag(ItemTag::WOODEN_BUTTONS, BASE / 2)
         .add(&vanilla_items::STICK, BASE / 2)
-        .add_tag(&ItemTag::SAPLINGS, BASE / 2)
+        .add_tag(ItemTag::SAPLINGS, BASE / 2)
         .add(&vanilla_items::BOWL, BASE / 2)
-        .add_tag(&ItemTag::WOOL_CARPETS, 1 + BASE / 3)
+        .add_tag(ItemTag::WOOL_CARPETS, 1 + BASE / 3)
         .add(&vanilla_items::DRIED_KELP_BLOCK, 1 + BASE * 20)
         .add(&vanilla_items::CROSSBOW, BASE * 3 / 2)
         .add(&vanilla_items::BAMBOO, BASE / 4)
@@ -149,7 +148,7 @@ pub static VANILLA_FUEL_VALUES: LazyLock<FuelValues> = LazyLock::new(|| {
         .add(&vanilla_items::FLOWERING_AZALEA, BASE / 2)
         .add(&vanilla_items::MANGROVE_ROOTS, BASE * 3 / 2)
         .add(&vanilla_items::LEAF_LITTER, BASE / 2)
-        .remove_tag(&ItemTag::NON_FLAMMABLE_WOOD)
+        .remove_tag(ItemTag::NON_FLAMMABLE_WOOD)
         .build()
 });
 

@@ -43,7 +43,7 @@ impl BlockBehavior for ShortDryGrassBlock {
     }
 
     fn can_survive(&self, _state: BlockStateId, world: &dyn LevelReader, pos: BlockPos) -> bool {
-        survives_on_tag(world, pos, &BlockTag::SUPPORTS_DRY_VEGETATION)
+        survives_on_tag(world, pos, BlockTag::SUPPORTS_DRY_VEGETATION)
     }
 
     fn get_state_for_placement(&self, context: &BlockPlaceContext<'_>) -> Option<BlockStateId> {

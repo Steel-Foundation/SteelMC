@@ -5,18 +5,17 @@ use std::num::Wrapping;
 
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_utils::Identifier;
 use steel_utils::codec::VarInt;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::nbt::NbtNumeric as _;
 use steel_utils::serial::{PrefixedRead as _, PrefixedWrite as _, ReadFrom, WriteTo};
 
-use crate::RegistryReference;
 use crate::data_components::vanilla_components::POTION_CONTENTS;
 use crate::item_stack::ItemStack;
 use crate::items::ItemRef;
 use crate::mob_effect_instance::MobEffectInstance;
 use crate::potion::{Potion, PotionRef};
+use crate::{RegistryReference, TagQuery};
 
 /// Color used when there is neither a custom color nor a visible effect.
 const BASE_POTION_COLOR: i32 = -13_083_194;
@@ -109,7 +108,7 @@ impl PotionContents {
 
     /// Whether the base potion is in `tag` and there are no custom effects.
     #[must_use]
-    pub fn is_in_tag(&self, tag: &Identifier) -> bool {
+    pub fn is_in_tag(&self, tag: &(impl TagQuery<Potion> + ?Sized)) -> bool {
         self.custom_effects.is_empty() && self.potion.is_some_and(|p| p.value().has_tag(tag))
     }
 
