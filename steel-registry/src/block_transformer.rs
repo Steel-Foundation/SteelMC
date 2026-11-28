@@ -22,8 +22,8 @@ use crate::{REGISTRY, RegistryEntry, RegistryExt};
 
 /// Item block transforms, e.g. shovel flattening dirt into a path.
 ///
-/// `PartialEq`/`Eq` come from [`crate::impl_registry_entry!`] (identity by key).
-#[derive(Debug, Clone)]
+/// `PartialEq`/`Eq` come from [`crate::impl_registry_entry!`] (identity by address).
+#[derive(Debug)]
 pub struct BlockTransformer {
     pub key: Identifier,
     pub transforms: Vec<BlockTransformData>,

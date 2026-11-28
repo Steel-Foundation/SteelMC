@@ -229,6 +229,10 @@ impl StatTypeRegistry {
     ///
     /// The registry supplied in this function must be in a supplier so that
     /// it only runs once when the registries are initialized.
+    ///
+    /// A stat type has one entry for the whole process: registering it in a
+    /// second registry, as tests do, reuses the entry and the supplier of its
+    /// first registration.
     pub fn register<R, F>(&mut self, stat_type: StatTypeRef<R>, registry_supplier: F)
     where
         R: RegistryExt + StatValueRegistry,
@@ -245,16 +249,15 @@ impl StatTypeRegistry {
             "Cannot register duplicate stat type key {key}"
         );
 
-        let entry = StatTypeEntry {
-            key: stat_type.key.clone(),
-            registry: LazyLock::new(Box::new(|| StatValueRegistryData::new(registry_supplier()))),
-        };
-
-        let entry_ref = Box::leak(Box::new(entry));
+        let entry_ref = *stat_type.stat_type_entry_ref.get_or_init(|| {
+            Box::leak(Box::new(StatTypeEntry {
+                key: stat_type.key.clone(),
+                registry: LazyLock::new(Box::new(|| {
+                    StatValueRegistryData::new(registry_supplier())
+                })),
+            }))
+        });
         let id = self.stat_types_by_id.len();
-
-        let locked_ref = stat_type.stat_type_entry_ref.get_or_init(|| entry_ref);
-        assert_eq!(entry_ref, *locked_ref);
 
         self.stat_types_by_id.push(entry_ref);
         self.stat_types_by_key.insert(stat_type.key.clone(), id);

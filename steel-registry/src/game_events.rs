@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use steel_utils::Identifier;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GameEvent {
     pub key: Identifier,
     pub notification_radius: i32,

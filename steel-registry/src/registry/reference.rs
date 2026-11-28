@@ -70,7 +70,7 @@ impl<T: RegistryReferenceEntry> Copy for RegistryReference<T> {}
 
 impl<T: RegistryReferenceEntry> PartialEq for RegistryReference<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.value.key() == other.value.key()
+        self.value == other.value
     }
 }
 

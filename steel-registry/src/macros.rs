@@ -36,20 +36,17 @@ macro_rules! impl_registry_ext {
     };
 }
 
-/// Implements registry-identity equality for an entry type by key.
+/// Implements registry-identity equality for an entry type by address.
 ///
-/// Registered entries are statics, so an entry is almost always compared with
-/// itself or with another static. The address settles the first case and the
-/// path, checked before the namespace, usually settles the second without
-/// comparing any string contents.
+/// A registered entry lives at one address for the whole process, so two
+/// references are the same entry exactly when they point to the same place.
+/// Registering two entries under one key is not supported.
 #[macro_export]
 macro_rules! impl_registry_entry_eq {
     ($Entry:ty) => {
         impl ::core::cmp::PartialEq for $Entry {
             fn eq(&self, other: &Self) -> bool {
                 ::core::ptr::eq(self, other)
-                    || (self.key.path == other.key.path
-                        && self.key.namespace == other.key.namespace)
             }
         }
 
