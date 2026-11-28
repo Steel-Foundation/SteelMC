@@ -16,7 +16,7 @@ use text_components::TextComponent;
 use crate::attribute::{Attribute, AttributeModifierOperation};
 use crate::data_components::{
     ComponentData, ComponentEntryRef, DataComponentGetter, DataComponentGetterExt as _,
-    DataComponentMap, PotionContents, vanilla_components,
+    DataComponentMap, vanilla_components,
 };
 use crate::enchantment::Enchantment;
 use crate::equipment::EquipmentSlotGroup;
@@ -47,6 +47,7 @@ mod basic;
 mod books;
 mod collections;
 mod core;
+mod effects;
 mod fireworks;
 mod registry_predicates;
 mod vanilla;
@@ -56,6 +57,7 @@ pub use basic::*;
 pub use books::*;
 pub use collections::*;
 pub use core::*;
+pub use effects::*;
 pub use fireworks::*;
 pub use registry_predicates::*;
 pub use vanilla::*;

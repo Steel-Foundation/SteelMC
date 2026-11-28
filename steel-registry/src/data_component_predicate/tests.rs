@@ -3,13 +3,15 @@ use std::io::Cursor;
 use super::core::write_registry_id;
 use super::*;
 use crate::data_components::components::OminousBottleAmplifier;
+use crate::data_components::vanilla_components::PotionContents;
 use crate::data_components::vanilla_components::{
     CAN_BREAK, DAMAGE, LOCK, OMINOUS_BOTTLE_AMPLIFIER,
 };
 use crate::data_components::{ComponentData, DataComponentMap};
 use crate::init_vanilla_registry;
 use crate::item_predicate::{AdventureModePredicate, BlockPredicate, LockCode};
-use crate::{RegistryHolderSet, vanilla_blocks, vanilla_items};
+use crate::item_stack::ItemStack;
+use crate::{RegistryHolderSet, vanilla_blocks, vanilla_items, vanilla_potions};
 use simdnbt::owned::{NbtCompound, NbtList, NbtTag};
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry};
 
@@ -55,6 +57,8 @@ fn every_builtin_predicate_payload_round_trips_persistence_and_network() {
 
     let mut twinkle = NbtCompound::new();
     twinkle.insert("has_twinkle", true);
+    let mut potion = NbtCompound::new();
+    potion.insert("potions", "minecraft:water");
     let samples = [
         ("damage", NbtTag::Compound(NbtCompound::new())),
         ("enchantments", NbtTag::List(NbtList::Compound(Vec::new()))),
@@ -62,7 +66,7 @@ fn every_builtin_predicate_payload_round_trips_persistence_and_network() {
             "stored_enchantments",
             NbtTag::List(NbtList::Compound(Vec::new())),
         ),
-        ("potion_contents", NbtTag::String("minecraft:water".into())),
+        ("potion_contents", NbtTag::Compound(potion)),
         ("custom_data", NbtTag::String("{}".into())),
         ("container", NbtTag::Compound(NbtCompound::new())),
         ("bundle_contents", NbtTag::Compound(NbtCompound::new())),
@@ -111,6 +115,40 @@ fn every_builtin_predicate_payload_round_trips_persistence_and_network() {
             .expect("predicate matcher network codec should decode"),
         matchers
     );
+}
+
+#[test]
+fn potions_predicate_matches_the_potion_and_its_effects() {
+    init_vanilla_registry();
+
+    let mut speed = NbtCompound::new();
+    speed.insert("minecraft:speed", NbtCompound::new());
+    let mut effects = NbtCompound::new();
+    effects.insert("contains", NbtList::Compound(vec![speed]));
+    let mut tag = NbtCompound::new();
+    tag.insert("potions", "minecraft:swiftness");
+    tag.insert("effects", effects);
+    let predicate = PotionsPredicate::from_nbt_value(&NbtTag::Compound(tag))
+        .expect("potions predicate should decode");
+
+    let swiftness =
+        || PotionContents::create_item_stack(&vanilla_items::POTION, &vanilla_potions::SWIFTNESS);
+    assert!(predicate.matches(&swiftness()));
+    assert!(!predicate.matches(&PotionContents::create_item_stack(
+        &vanilla_items::POTION,
+        &vanilla_potions::WATER,
+    )));
+    assert!(!predicate.matches(&ItemStack::new(&vanilla_items::DIAMOND)));
+
+    let mut strength = NbtCompound::new();
+    strength.insert("minecraft:strength", NbtCompound::new());
+    let mut effects = NbtCompound::new();
+    effects.insert("contains", NbtList::Compound(vec![strength]));
+    let mut tag = NbtCompound::new();
+    tag.insert("effects", effects);
+    let effects_only = PotionsPredicate::from_nbt_value(&NbtTag::Compound(tag))
+        .expect("effects-only potions predicate should decode");
+    assert!(!effects_only.matches(&swiftness()));
 }
 
 #[test]

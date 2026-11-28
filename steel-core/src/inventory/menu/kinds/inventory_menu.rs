@@ -298,7 +298,7 @@ impl MenuKind for InventoryKind {
         let taken = clicked.copy_with_count(clicked.count - stack_mut.count);
         let slot = &behavior.slots()[slot_index];
         slot.on_quick_craft(&taken, player);
-        if let Some(remainder) = slot.on_take(guard, &stack_mut, player) {
+        if let Some(remainder) = slot.on_take(guard, &taken, player) {
             // Crafting remainders like empty buckets go back to the inventory.
             player.add_item_or_drop_with_guard(guard, remainder, Prediction::Predicted);
         }

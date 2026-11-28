@@ -93,7 +93,7 @@ fn item_predicate_argument_decodes_every_registered_vanilla_partial_predicate() 
     init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     for expression in [
-        "potion_contents~'minecraft:water'",
+        "potion_contents~{potions:'minecraft:water'}",
         "container~{}",
         "bundle_contents~{}",
         "firework_explosion~{}",
@@ -268,7 +268,7 @@ fn item_predicate_argument_rejects_malformed_potion_predicate() {
     init_vanilla_registry();
     let dispatcher = resource_dispatcher(SteelArgumentType::item_predicate());
     let parse = dispatcher.parse(
-        "resource potion[potion_contents~{potion:'minecraft:water'}]",
+        "resource potion[potion_contents~{potions:5}]",
         TestSource::new(),
     );
 

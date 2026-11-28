@@ -4,21 +4,26 @@ use std::io::{Cursor, Result, Write};
 
 use simdnbt::owned::{NbtCompound, NbtTag};
 use simdnbt::{FromNbtTag, ToNbtTag};
-use steel_utils::Identifier;
 use steel_utils::hash::{ComponentHasher, HashComponent, HashEntry, sort_map_entries};
 use steel_utils::serial::{ReadFrom, WriteTo};
 
-/// References to the context int/float providers that give a fuel item its
-/// burn time and cooking-speed multiplier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::resolvable_number::{ResolvableFloat, ResolvableInt};
+
+/// The burn time and cooking-speed multiplier a furnace fuel item provides.
+///
+/// Literal providers are folded to [`ResolvableInt::Constant`] /
+/// [`ResolvableFloat::Constant`] by the build script. Non-literal providers stay
+/// as references because Steel has no runtime context-provider registry; they are
+/// preserved by the codecs but not evaluated.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CookingFuel {
-    pub burn_time: Identifier,
-    pub speed_multiplier: Identifier,
+    pub burn_time: ResolvableInt,
+    pub speed_multiplier: ResolvableFloat,
 }
 
 impl CookingFuel {
     #[must_use]
-    pub const fn new(burn_time: Identifier, speed_multiplier: Identifier) -> Self {
+    pub const fn new(burn_time: ResolvableInt, speed_multiplier: ResolvableFloat) -> Self {
         Self {
             burn_time,
             speed_multiplier,
@@ -36,8 +41,8 @@ impl WriteTo for CookingFuel {
 impl ReadFrom for CookingFuel {
     fn read(data: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self {
-            burn_time: Identifier::read(data)?,
-            speed_multiplier: Identifier::read(data)?,
+            burn_time: ResolvableInt::read(data)?,
+            speed_multiplier: ResolvableFloat::read(data)?,
         })
     }
 }
@@ -54,8 +59,8 @@ impl ToNbtTag for CookingFuel {
 impl FromNbtTag for CookingFuel {
     fn from_nbt_tag(tag: simdnbt::borrow::NbtTag) -> Option<Self> {
         let compound = tag.compound()?;
-        let burn_time = Identifier::from_nbt_tag(compound.get("burn_time")?)?;
-        let speed_multiplier = Identifier::from_nbt_tag(compound.get("speed_multiplier")?)?;
+        let burn_time = ResolvableInt::from_nbt_tag(compound.get("burn_time")?)?;
+        let speed_multiplier = ResolvableFloat::from_nbt_tag(compound.get("speed_multiplier")?)?;
         Some(Self {
             burn_time,
             speed_multiplier,
@@ -98,6 +103,7 @@ mod tests {
     use steel_utils::serial::{ReadFrom as _, WriteTo as _};
 
     use super::CookingFuel;
+    use crate::resolvable_number::{ResolvableFloat, ResolvableInt};
 
     fn parse(tag: NbtTag) -> Option<CookingFuel> {
         let mut bytes = Vec::new();
@@ -107,20 +113,31 @@ mod tests {
     }
 
     #[test]
-    fn round_trips_both_codecs() {
-        let value = CookingFuel::new(
-            Identifier::vanilla_static("cooking/time_wood_blocks"),
-            Identifier::vanilla_static("cooking/speed_default"),
+    fn round_trips_references_and_constants() {
+        let references = CookingFuel::new(
+            ResolvableInt::reference(Identifier::vanilla_static("cooking/time_wood_blocks")),
+            ResolvableFloat::reference(Identifier::vanilla_static("cooking/speed_default")),
         );
-
-        let nbt = value.clone().to_nbt_tag();
-        assert_eq!(parse(nbt), Some(value.clone()));
-
-        let mut network = Vec::new();
-        value.write(&mut network).expect("fuel should encode");
         assert_eq!(
-            CookingFuel::read(&mut Cursor::new(network.as_slice())).expect("fuel should decode"),
-            value
+            parse(references.clone().to_nbt_tag()),
+            Some(references.clone())
         );
+
+        let constants =
+            CookingFuel::new(ResolvableInt::constant(300), ResolvableFloat::constant(0.5));
+        assert_eq!(
+            parse(constants.clone().to_nbt_tag()),
+            Some(constants.clone())
+        );
+
+        for value in [references, constants] {
+            let mut network = Vec::new();
+            value.write(&mut network).expect("fuel should encode");
+            assert_eq!(
+                CookingFuel::read(&mut Cursor::new(network.as_slice()))
+                    .expect("fuel should decode"),
+                value
+            );
+        }
     }
 }

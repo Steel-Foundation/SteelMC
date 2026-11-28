@@ -77,6 +77,7 @@ pub use registry::holder;
 pub use registry::holder_set;
 pub use registry::reference as registry_reference;
 pub use registry::*;
+pub mod resolvable_number;
 pub mod resolvable_profile;
 pub mod sound_event;
 pub mod stat;
@@ -108,6 +109,7 @@ pub use game_profile::{GameProfile, ProfileProperty};
 pub use item_stack_template::ItemStackTemplate;
 pub use mob_effect_instance::{MobEffectInstance, MobEffectInstanceDetails};
 pub use potion::{Potion, PotionEffect, PotionRef};
+pub use resolvable_number::{ResolvableFloat, ResolvableInt};
 pub use resolvable_profile::{
     PartialProfile, PlayerModelType, PlayerSkinPatch, ResolvableProfile, ResolvableProfileContents,
 };
