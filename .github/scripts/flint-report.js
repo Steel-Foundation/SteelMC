@@ -18,8 +18,9 @@ const names = (entries) => entries.map((e) => e.name);
 
 /** Tests that passed in the baseline but do not pass now (`missing`: absent from the results). */
 function findRegressions(base, curr) {
-  const present = new Set(names(curr));
-  const passed = new Set(names(curr.filter((e) => e.success)));
+  const executed = curr.filter((e) => !e.skipped);
+  const present = new Set(names(executed));
+  const passed = new Set(names(executed.filter((e) => e.success)));
   const required = sorted(new Set(names(base.filter((e) => e.success))));
   return required
     .filter((name) => !passed.has(name))
@@ -38,14 +39,14 @@ function mergeBaseline(base, curr) {
 const newIds = (current, base) => sorted(current.filter((id) => !base.includes(id)));
 
 const regressionLine = (r) => `${r.name}${r.missing ? " (missing from results)" : ""}`;
-const passedCount = (tests) => tests.filter((t) => t.success).length;
+const passedCount = (tests) => tests.filter((t) => t.success && !t.skipped).length;
 
 function newlyImplementedSection(summary, currentIds, baseIds) {
   if (!currentIds || !baseIds) return ["No implemented-id list for this run or master yet — skipped."];
   const added = newIds(currentIds, baseIds);
   if (added.length === 0) return ["None."];
 
-  const tests = summary.filter((t) => t.ids.some((id) => added.includes(id)));
+  const tests = summary.filter((t) => !t.skipped && t.ids.some((id) => added.includes(id)));
   const failed = names(tests.filter((t) => !t.success));
   const lines = [
     `\`${added.join("`, `")}\``,
@@ -63,25 +64,41 @@ function newlyImplementedSection(summary, currentIds, baseIds) {
 
 function buildReport({ summary, regressions, currentIds, baseIds, runUrl }) {
   const lines = [HEADING, ""];
-  if (!summary) {
+  if (!Array.isArray(summary)) {
     lines.push(
-      `:x: No \`flint_summary.json\` produced — steel-flint likely failed to compile. See the [workflow run](${runUrl}).`,
+      `:x: Flint did not produce a summary. See the [workflow run](${runUrl}) for the error.`,
     );
     return lines.join("\n");
   }
 
-  const failedTotal = summary.length - passedCount(summary);
+  const skippedTotal = summary.filter((test) => test.skipped).length;
+  const failedTotal = summary.length - passedCount(summary) - skippedTotal;
   lines.push(
-    `**Implemented tests:** ${summary.length} total, ${passedCount(summary)} passed, ${failedTotal} failed`,
-    "",
-    "### Regressions",
+    `**Implemented tests:** ${summary.length} total, ${passedCount(summary)} passed, ${failedTotal} failed, ${skippedTotal} skipped`,
   );
+  const errors = summary.filter((test) => test.error);
+  if (errors.length > 0) {
+    lines.push("", "### Errors", ...errors.map((test) => `- :x: \`${test.name}\`: ${test.error}`));
+  }
+  const actualRegressions = regressions?.filter((test) => !test.missing) ?? [];
+  const missing = regressions?.filter((test) => test.missing) ?? [];
+  lines.push("", "### Regressions");
   if (!regressions) {
-    lines.push("No master baseline yet — skipped.");
+    lines.push("No baseline comparison available. See the workflow run for details.");
   } else if (regressions.length === 0) {
     lines.push("None :white_check_mark:");
+  } else if (actualRegressions.length === 0) {
+    lines.push("None among executed tests (:warning: some baseline tests did not run).");
   } else {
-    lines.push(...regressions.map((r) => `- :x: \`${r.name}\`${r.missing ? " (missing from results)" : ""}`));
+    lines.push(...actualRegressions.map((test) => `- :x: \`${test.name}\``));
+  }
+  if (missing.length > 0) {
+    const panicked = errors.some((test) => test.error === "Flint test panicked");
+    lines.push("", "### Baseline tests that did not run");
+    if (panicked) {
+      lines.push("The test suite aborted early after a panic, so these baseline tests did not run:");
+    }
+    lines.push(...missing.map((test) => `- \`${test.name}\``));
   }
   lines.push("", "### Newly implemented blocks/items", ...newlyImplementedSection(summary, currentIds, baseIds));
   lines.push(
@@ -91,20 +108,96 @@ function buildReport({ summary, regressions, currentIds, baseIds, runUrl }) {
   return lines.join("\n");
 }
 
-function checkRegressions({ core }) {
+function validateInputs({ core }) {
   const curr = readJson(SUMMARY);
-  if (!curr) {
-    core.setFailed("No flint_summary.json produced — tests likely failed to compile");
+  if (!Array.isArray(curr) || !curr.some((test) => !test.skipped)) {
+    core.setFailed("No Flint tests executed or the run did not produce a summary");
     return;
   }
-  const base = readJson(BASELINE);
-  if (!base) {
-    core.info("No baseline found — skipping regression check");
+  if (new Set(names(curr)).size !== curr.length) {
+    core.setFailed("Flint test names must be unique");
     return;
   }
 
-  const regressions = findRegressions(base, curr);
+  const benchmarkSha = process.env.FLINT_BENCHMARK_SHA;
+  if (!/^[a-f0-9]{40}$/.test(benchmarkSha ?? "")) {
+    core.setFailed("Missing FlintBenchmark checkout SHA");
+    return;
+  }
+  const master = process.env.FLINT_MASTER === "true";
+  const bootstrap = process.env.FLINT_BOOTSTRAP === "true";
+  if (bootstrap && !master) {
+    core.setFailed("Flint baseline bootstrap must run on master");
+    return;
+  }
+
+  const errors = curr.filter((test) => test.error);
+  const panics = errors.filter((test) => test.error === "Flint test panicked");
+  const hasPassing = curr.some((test) => test.success && !test.skipped);
+  const formatErrors = (list) => list.map((test) => `${test.name}: ${test.error}`).join("\n");
+
+  const base = readJson(BASELINE);
+  if (!base) {
+    if (panics.length > 0) {
+      core.setFailed(formatErrors(panics));
+    } else if (master && !bootstrap) {
+      core.setFailed(`Flint baseline unavailable for ${benchmarkSha}. Use an explicit master bootstrap for a new revision.`);
+    } else if (bootstrap && !hasPassing) {
+      core.setFailed("Cannot bootstrap a baseline without a passing Flint test");
+    } else if (errors.length > 0 && !hasPassing) {
+      core.setFailed(formatErrors(errors));
+    } else {
+      if (errors.length > 0) {
+        core.warning(`Non-blocking Flint test errors:\n${formatErrors(errors)}`);
+      }
+      if (!bootstrap) {
+        core.warning(`No Flint baseline available for ${benchmarkSha}`);
+      }
+    }
+    return;
+  }
+  if (base.benchmarkSha !== benchmarkSha || !Array.isArray(base.tests) ||
+      !base.tests.some((test) => test.success)) {
+    core.setFailed(`Invalid Flint baseline for ${benchmarkSha}`);
+    return;
+  }
+  if (bootstrap) {
+    core.setFailed(`A Flint baseline already exists for ${benchmarkSha}`);
+    return;
+  }
+
+  const regressions = findRegressions(base.tests, curr);
   fs.writeFileSync(REGRESSIONS, JSON.stringify(regressions, null, 2));
+  if (panics.length > 0) {
+    core.setFailed(formatErrors(panics));
+    return;
+  }
+  if (errors.length > 0 && !hasPassing) {
+    core.setFailed(formatErrors(errors));
+    return;
+  }
+  const basePassed = new Set(names(base.tests.filter((test) => test.success)));
+  const baselineErrors = errors.filter((test) => basePassed.has(test.name));
+  if (baselineErrors.length > 0) {
+    core.setFailed(formatErrors(baselineErrors));
+    return;
+  }
+  const newErrors = errors.filter((test) => !basePassed.has(test.name));
+  if (newErrors.length > 0) {
+    core.warning(`Non-blocking Flint test errors in non-baseline tests:\n${formatErrors(newErrors)}`);
+  }
+  const missing = regressions.filter((test) => test.missing);
+  if (missing.length > 0) {
+    core.setFailed(`Flint tests from the pinned baseline did not execute: ${names(missing).join(", ")}`);
+  }
+}
+
+function checkRegressions({ core }) {
+  const regressions = readJson(REGRESSIONS);
+  if (!regressions) {
+    core.info("No baseline comparison available");
+    return;
+  }
   if (regressions.length === 0) {
     core.info("No regressions detected");
     return;
@@ -144,8 +237,10 @@ function prReport({ core, context }) {
 function mergeBaselineStep() {
   const curr = readJson(SUMMARY);
   const base = readJson(BASELINE);
-  const merged = base ? mergeBaseline(base, curr) : curr;
-  fs.writeFileSync(MERGED_BASELINE, JSON.stringify(merged, null, 2));
+  const executed = curr.filter((test) => !test.skipped);
+  const tests = mergeBaseline(base?.tests ?? [], executed);
+  const baseline = { benchmarkSha: process.env.FLINT_BENCHMARK_SHA, tests };
+  fs.writeFileSync(MERGED_BASELINE, JSON.stringify(baseline, null, 2));
 }
 
 module.exports = {
@@ -153,6 +248,7 @@ module.exports = {
   mergeBaseline,
   newIds,
   buildReport,
+  validateInputs,
   checkRegressions,
   warnRegressions,
   prReport,
