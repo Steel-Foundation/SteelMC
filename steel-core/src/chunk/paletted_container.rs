@@ -3,9 +3,13 @@ use std::{
     fmt::Debug,
     hash::Hash,
     io::{Result, Write},
-    mem, slice,
+    iter::from_fn,
+    marker::PhantomData,
+    mem,
     sync::OnceLock,
 };
+
+use rustc_hash::FxHashMap;
 
 use steel_registry::blocks::block_state_ext::BlockStateExt;
 use steel_registry::{REGISTRY, RegistryExt as _};
@@ -34,76 +38,192 @@ impl ToGlobalId for u16 {
 /// 3d array indexed by y,z,x
 type Cube<T, const DIM: usize> = [[[T; DIM]; DIM]; DIM];
 
-/// A heterogeneous palette container.
-///
-/// Every value in the cube appears exactly once in the palette. The fields are private so
-/// only this module can change the cube and palette together.
-#[derive(Debug, Clone)]
-pub struct HeterogeneousPalette<V: Hash + Eq + Copy, const DIM: usize> {
-    cube: Box<Cube<V, DIM>>,
-    // Keeps track of how many different times each value appears in the cube. (value, count)
-    palette: Vec<(V, u16)>,
+const BITS_PER_WORD: usize = u64::BITS as usize;
+
+/// initial index width using the same widths as the chunk save format
+const fn storage_bits(palette_len: usize) -> u8 {
+    match palette_len {
+        0..=2 => 1,
+        3..=4 => 2,
+        5..=16 => 4,
+        17..=256 => 8,
+        _ => 16,
+    }
 }
 
-impl<V: Hash + Eq + Copy, const DIM: usize> HeterogeneousPalette<V, DIM> {
-    /// The distinct values in the cube, each with the number of cells holding it.
+/// A heterogeneous palette container backed by bit-packed indices.
+///
+/// packed indices refer to positions in the sectionlocal palette
+#[derive(Debug, Clone)]
+pub struct HeterogeneousPalette<V: Hash + Eq + Copy + Default, const DIM: usize> {
+    palette: Vec<(V, u16)>,
+    index_by_value: FxHashMap<V, usize>,
+    indices: Box<[u64]>,
+    bits: u8,
+    _dim: PhantomData<[(); DIM]>,
+}
+
+impl<V: Hash + Eq + Copy + Default, const DIM: usize> HeterogeneousPalette<V, DIM> {
+    const VOLUME: usize = DIM * DIM * DIM;
+
+    /// The distinct values, each with the number of cells holding it.
     pub(crate) fn palette(&self) -> &[(V, u16)] {
         &self.palette
     }
 
     /// All values in y, z, x order.
-    pub(crate) fn values(&self) -> &[V] {
-        self.cube.as_flattened().as_flattened()
+    pub(crate) fn values(&self) -> impl ExactSizeIterator<Item = V> + '_ {
+        (0..Self::VOLUME).map(move |linear| self.value_at_index(linear))
+    }
+
+    /// Values in y, z, x order.
+    pub fn iter_values(&self) -> impl ExactSizeIterator<Item = V> + '_ {
+        self.values()
+    }
+
+    pub(crate) fn indices_iter(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        (0..Self::VOLUME).map(|linear| self.index_at(linear))
+    }
+
+    #[inline]
+    const fn linear(x: usize, y: usize, z: usize) -> usize {
+        x + z * DIM + y * DIM * DIM
+    }
+
+    #[inline]
+    fn index_at(&self, linear: usize) -> usize {
+        let bits = usize::from(self.bits);
+        let offset = linear * bits;
+        let word = self.indices[offset / BITS_PER_WORD];
+        let shift = offset % BITS_PER_WORD;
+
+        ((word >> shift) & ((1u64 << bits) - 1)) as usize
+    }
+
+    #[inline]
+    fn value_at_index(&self, linear: usize) -> V {
+        // Only the test helper makes a bad index, encoders check the raw indices.
+        self.palette
+            .get(self.index_at(linear))
+            .map_or_else(V::default, |(value, _)| *value)
+    }
+
+    #[inline]
+    fn set_index_at(&mut self, linear: usize, index: usize) {
+        let bits = usize::from(self.bits);
+        let offset = linear * bits;
+        let shift = offset % BITS_PER_WORD;
+        let mask = ((1u64 << bits) - 1) << shift;
+        let word = &mut self.indices[offset / BITS_PER_WORD];
+
+        *word = (*word & !mask) | ((index as u64) << shift);
+    }
+
+    /// Repacks indices at a new width.
+    fn repack(&mut self, new_bits: u8) {
+        let new_bits_usize = usize::from(new_bits);
+        let per_word = BITS_PER_WORD / new_bits_usize;
+        let mut packed = vec![0u64; Self::VOLUME.div_ceil(per_word)];
+
+        for (word, start) in packed.iter_mut().zip((0..Self::VOLUME).step_by(per_word)) {
+            let end = (start + per_word).min(Self::VOLUME);
+            let mut accumulator = 0;
+
+            for (slot, linear) in (start..end).enumerate() {
+                accumulator |= (self.index_at(linear) as u64) << (slot * new_bits_usize);
+            }
+
+            *word = accumulator;
+        }
+
+        self.indices = packed.into_boxed_slice();
+        self.bits = new_bits;
+    }
+
+    /// Removes an entry and remaps cells that used the last slot.
+    fn remove_palette_entry(&mut self, index: usize) {
+        let last = self.palette.len() - 1;
+        let removed = self.palette[index].0;
+        self.index_by_value.remove(&removed);
+        if index == last {
+            self.palette.pop();
+            return;
+        }
+        let swapped = self.palette[last].0;
+        self.palette.swap_remove(index);
+        self.index_by_value.insert(swapped, index);
+        Self::remap_indices(&mut self.indices, self.bits, last, index);
+    }
+
+    fn remap_indices(words: &mut [u64], bits: u8, from: usize, to: usize) {
+        let mask = (1u64 << bits) - 1;
+        let repeated_one = u64::MAX / mask;
+        let high_bits = repeated_one << (bits - 1);
+        let low_bits = !high_bits;
+        let from_pattern = from as u64 * repeated_one;
+        let change = (from ^ to) as u64 * repeated_one;
+
+        for word in words {
+            let different_bits = *word ^ from_pattern;
+            let nonzero = ((different_bits & low_bits) + low_bits) | different_bits;
+            let matches = (!nonzero & high_bits) >> (bits - 1);
+
+            *word ^= (matches * mask) & change;
+        }
     }
 
     fn get(&self, x: usize, y: usize, z: usize) -> V {
-        debug_assert!(x < DIM);
-        debug_assert!(y < DIM);
-        debug_assert!(z < DIM);
-
-        self.cube[y][z][x]
+        self.value_at_index(Self::linear(x, y, z))
     }
 
-    fn get_at_index(&self, index: usize) -> V {
-        debug_assert!(index < DIM * DIM * DIM);
-
-        let y = index / (DIM * DIM);
-        let z = (index / DIM) % DIM;
-        let x = index % DIM;
-        self.cube[y][z][x]
-    }
-
-    /// Returns an iterator over all values in the cube in y, z, x order.
-    pub fn iter_values(&self) -> impl Iterator<Item = &V> {
-        self.values().iter()
+    fn get_at_index(&self, linear: usize) -> V {
+        self.value_at_index(linear)
     }
 
     fn set(&mut self, x: usize, y: usize, z: usize, value: V) -> V {
-        debug_assert!(x < DIM);
-        debug_assert!(y < DIM);
-        debug_assert!(z < DIM);
-
-        let old_value = self.cube[y][z][x];
-
-        if let Some((_, count)) = self.palette.iter_mut().find(|(v, _)| *v == value) {
-            *count += 1;
-        } else {
-            self.palette.push((value, 1));
+        let linear = Self::linear(x, y, z);
+        let old_index = self.index_at(linear);
+        let old_value = self.palette[old_index].0;
+        if value == old_value {
+            return old_value;
         }
 
-        if let Some((index, (_, count))) = self
-            .palette
-            .iter_mut()
-            .enumerate()
-            .find(|(_, (v, _))| *v == old_value)
-        {
-            *count -= 1;
-            if *count == 0 {
-                self.palette.swap_remove(index);
+        let existing_index = self.index_by_value.get(&value).copied();
+        if self.palette[old_index].1 == 1 && existing_index.is_none() {
+            self.palette[old_index].0 = value;
+            self.index_by_value.remove(&old_value);
+            self.index_by_value.insert(value, old_index);
+
+            return old_value;
+        }
+
+        self.palette[old_index].1 -= 1;
+
+        let mut new_index = existing_index.unwrap_or(self.palette.len());
+        if self.palette[old_index].1 == 0 {
+            if new_index == self.palette.len() - 1 {
+                new_index = old_index;
             }
+
+            self.remove_palette_entry(old_index);
         }
 
-        self.cube[y][z][x] = value;
+        if existing_index.is_none() {
+            self.palette.push((value, 0));
+            self.index_by_value.insert(value, new_index);
+        }
+
+        let new_bits = storage_bits(self.palette.len());
+        if new_bits > self.bits {
+            self.repack(new_bits);
+        }
+
+        self.palette[new_index].1 += 1;
+        self.set_index_at(linear, new_index);
+
+        if existing_index.is_none() && new_bits < self.bits {
+            self.repack(new_bits);
+        }
 
         old_value
     }
@@ -149,36 +269,79 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     /// end" loop is a vectorizable equality scan, so long stone columns collapse
     /// to a single palette increment.
     #[must_use]
+    #[expect(clippy::boxed_local, reason = "callers pass boxed cubes from worldgen")]
     pub fn from_cube(cube: Box<Cube<V, DIM>>) -> Self {
         let mut palette: Vec<(V, u16)> = Vec::new();
-        let total = DIM * DIM * DIM;
-        // SAFETY: `[[[V; DIM]; DIM]; DIM]` is a fully-contiguous array of
-        // `DIM*DIM*DIM` `V`s, so casting its base pointer to `*const V` and
-        // building a slice of that length is sound. `cube` is a live `Box`, so
-        // the pointer is valid for the lifetime of the slice.
-        let flat: &[V] = unsafe { slice::from_raw_parts(cube.as_ptr().cast::<V>(), total) };
+        let mut index_by_value: FxHashMap<V, usize> = FxHashMap::default();
+        let total = Self::VOLUME;
+        let flat = cube.as_flattened().as_flattened();
 
-        let mut i = 0;
-        while i < total {
-            let v = flat[i];
-            let mut j = i + 1;
-            while j < total && flat[j] == v {
-                j += 1;
-            }
-            let run_len = (j - i) as u16;
-            if let Some(pos) = palette.iter().position(|(value, _)| *value == v) {
+        for (start, end, v) in Self::runs(flat) {
+            let run_len = (end - start) as u16;
+            if let Some(&pos) = index_by_value.get(&v) {
                 palette[pos].1 += run_len;
             } else {
+                index_by_value.insert(v, palette.len());
                 palette.push((v, run_len));
             }
-            i = j;
         }
 
         if palette.len() == 1 {
             Self::Homogeneous(palette[0].0)
         } else {
-            Self::Heterogeneous(HeterogeneousPalette { cube, palette })
+            let bits = storage_bits(palette.len());
+            let bits_per_index = usize::from(bits);
+            let per_word = BITS_PER_WORD / bits_per_index;
+            let mut indices = vec![0u64; total.div_ceil(per_word)];
+            let repeating_index = u64::MAX / ((1u64 << bits) - 1);
+
+            for (start, end, value) in Self::runs(flat) {
+                let index = index_by_value[&value] as u64;
+                let offset = start * bits_per_index;
+                if end - start == 1 {
+                    indices[offset / BITS_PER_WORD] |= index << (offset % BITS_PER_WORD);
+                    continue;
+                }
+
+                let pattern = index * repeating_index;
+                let end_offset = end * bits_per_index;
+                let first = offset / BITS_PER_WORD;
+                let last = (end_offset - 1) / BITS_PER_WORD;
+                let first_mask = u64::MAX << (offset % BITS_PER_WORD);
+                let last_mask =
+                    u64::MAX >> ((BITS_PER_WORD - end_offset % BITS_PER_WORD) % BITS_PER_WORD);
+                if first == last {
+                    indices[first] |= pattern & first_mask & last_mask;
+                } else {
+                    indices[first] |= pattern & first_mask;
+                    indices[first + 1..last].fill(pattern);
+                    indices[last] |= pattern & last_mask;
+                }
+            }
+            Self::Heterogeneous(HeterogeneousPalette {
+                palette,
+                index_by_value,
+                indices: indices.into_boxed_slice(),
+                bits,
+                _dim: PhantomData,
+            })
         }
+    }
+
+    fn runs(flat: &[V]) -> impl Iterator<Item = (usize, usize, V)> + '_ {
+        let mut start = 0;
+        from_fn(move || {
+            let value = *flat.get(start)?;
+            let mut end = start + 1;
+            while end < flat.len() && flat[end] == value {
+                end += 1;
+            }
+
+            let run = (start, end, value);
+            start = end;
+
+            Some(run)
+        })
     }
 
     /// Gets the value at the given coordinates.
@@ -228,7 +391,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
             }
             Self::Heterogeneous(data) => {
                 for (y, slot) in out[..DIM].iter_mut().enumerate() {
-                    *slot = data.cube[y][z][x];
+                    *slot = data.get(x, y, z);
                 }
             }
             Self::Building(cube) => {
@@ -261,7 +424,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     pub fn collect_values(&self) -> Vec<V> {
         match self {
             Self::Homogeneous(value) => vec![*value; Self::VOLUME],
-            Self::Heterogeneous(data) => data.iter_values().copied().collect(),
+            Self::Heterogeneous(data) => data.iter_values().collect(),
             Self::Building(cube) => cube.iter().flatten().flatten().copied().collect(),
         }
     }
@@ -269,8 +432,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     /// Switches the container into write-only build mode for fast bulk writes.
     /// Idempotent: a no-op if already in [`Self::Building`].
     ///
-    /// Allocates a `Cube` if currently `Homogeneous`. For `Heterogeneous` it
-    /// reuses the existing cube allocation.
+    /// Allocates a `Cube` holding the current values.
     pub fn enter_building_mode(&mut self) {
         match self {
             Self::Building(_) => {}
@@ -278,12 +440,23 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 let cube: Box<Cube<V, DIM>> = Box::new([[[*value; DIM]; DIM]; DIM]);
                 *self = Self::Building(cube);
             }
-            Self::Heterogeneous(_) => {
-                let taken = mem::replace(self, Self::Homogeneous(V::default()));
-                let Self::Heterogeneous(data) = taken else {
-                    unreachable!()
-                };
-                *self = Self::Building(data.cube);
+            Self::Heterogeneous(data) => {
+                let mut cube: Box<Cube<V, DIM>> = Box::new([[[V::default(); DIM]; DIM]; DIM]);
+                let bits = usize::from(data.bits);
+                let mask = (1u64 << bits) - 1;
+                let mut cells = cube.as_flattened_mut().as_flattened_mut().iter_mut();
+
+                for &word in &data.indices {
+                    for (slot, cell) in cells.by_ref().take(BITS_PER_WORD / bits).enumerate() {
+                        let index = ((word >> (slot * bits)) & mask) as usize;
+                        *cell = data
+                            .palette
+                            .get(index)
+                            .map_or_else(V::default, |(value, _)| *value);
+                    }
+                }
+
+                *self = Self::Building(cube);
             }
         }
     }
@@ -297,19 +470,14 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     #[inline]
     pub fn as_building_slice_mut(&mut self) -> Option<&mut [V]> {
         if let Self::Building(cube) = self {
-            // SAFETY: `[[[V; DIM]; DIM]; DIM]` is a contiguous array of
-            // `DIM*DIM*DIM` `V`s; the cast preserves the live `&mut Box`'s
-            // borrow because the returned slice cannot outlive `self`.
-            Some(unsafe {
-                slice::from_raw_parts_mut(cube.as_mut_ptr().cast::<V>(), DIM * DIM * DIM)
-            })
+            Some(cube.as_flattened_mut().as_flattened_mut())
         } else {
             None
         }
     }
 
-    /// Finalizes a [`Self::Building`] container back to `Homogeneous` or
-    /// `Heterogeneous` by scanning the cube once and constructing the palette.
+    /// Finalizes a [`Self::Building`] container by constructing its palette
+    /// and packing the indices for heterogeneous cubes.
     /// No-op if not in build mode.
     pub fn finalize_building(&mut self) {
         if !matches!(self, Self::Building(_)) {
@@ -322,11 +490,14 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         *self = Self::from_cube(cube);
     }
 
-    /// Writes `value` without updating the palette, breaking its invariant for tests.
+    /// Writes a bad palette index for tests.
     #[cfg(test)]
-    pub(crate) fn set_without_palette_for_test(&mut self, x: usize, y: usize, z: usize, value: V) {
+    pub(crate) fn set_without_palette_for_test(&mut self, x: usize, y: usize, z: usize, _value: V) {
         if let Self::Heterogeneous(data) = self {
-            data.cube[y][z][x] = value;
+            // Widen so the bad index is visible to write().
+            data.repack(16);
+            let linear = HeterogeneousPalette::<V, DIM>::linear(x, y, z);
+            data.set_index_at(linear, data.palette.len());
         }
     }
 
@@ -389,12 +560,37 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
                 let mut buffer = [0; encode::MAX_PACKED_BYTES];
                 let packed = match mode {
                     PaletteMode::Global => {
-                        encode::pack_global_ids(data.values(), bits, &mut buffer)?
+                        let to_id = |index: usize| {
+                            data.palette
+                                .get(index)
+                                .map_or(u32::MAX, |(value, _)| value.to_global_id())
+                        };
+
+                        if data.bits == 16 && bits == 16 {
+                            encode::translate_words(
+                                &data.indices,
+                                Self::VOLUME,
+                                to_id,
+                                &mut buffer,
+                            )?
+                        } else {
+                            encode::pack_remapped(
+                                &data.indices,
+                                Self::VOLUME,
+                                data.bits,
+                                bits,
+                                1u32 << bits,
+                                to_id,
+                                &mut buffer,
+                            )?
+                        }
                     }
-                    PaletteMode::Linear | PaletteMode::Hash => encode::pack_palette_indices(
-                        data.values(),
-                        &data.palette,
+                    PaletteMode::Linear | PaletteMode::Hash => encode::pack_local(
+                        &data.indices,
+                        Self::VOLUME,
+                        data.bits,
                         bits,
+                        data.palette.len() as u32,
                         &mut buffer,
                     )?,
                 };
@@ -427,7 +623,7 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
     }
 
     fn calculate_strategy(count: usize) -> (u8, PaletteMode) {
-        if DIM == 16 {
+        if DIM == BlockPalette::SIZE {
             // Block states
             match count {
                 0..=1 => unreachable!("Homogeneous handled separately"),
@@ -533,10 +729,15 @@ impl BlockPalette {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, ErrorKind};
+    use std::{
+        fmt::Debug,
+        hash::Hash,
+        io::{Cursor, ErrorKind},
+    };
 
     use super::{
-        BiomePalette, BlockPalette, ToGlobalId, biome_global_bits, block_state_global_bits,
+        BiomePalette, BlockPalette, HeterogeneousPalette, PalettedContainer, ToGlobalId,
+        biome_global_bits, block_state_global_bits,
     };
     use steel_registry::init_vanilla_registry;
     use steel_utils::{BlockStateId, codec::VarInt, serial::ReadFrom as _};
@@ -570,6 +771,164 @@ mod tests {
             container.get_at_index(3 + 5 * 16 + 4 * 16 * 16),
             BlockStateId(99)
         );
+    }
+
+    #[test]
+    fn set_grows_and_collapses_the_palette_across_bit_widths() {
+        init_vanilla_registry();
+        let position = |index: usize| (index % 16, (index / 16) % 16, (index / 256) % 16);
+        let mut container = BlockPalette::Homogeneous(BlockStateId(1));
+
+        for index in 1..=300usize {
+            let (x, y, z) = position(index);
+            container.set(x, y, z, BlockStateId(index as u16));
+        }
+        for index in 1..=300usize {
+            let (x, y, z) = position(index);
+            assert_eq!(container.get(x, y, z), BlockStateId(index as u16));
+        }
+        for index in 1..=300usize {
+            let (x, y, z) = position(index);
+            container.set(x, y, z, BlockStateId(1));
+        }
+        for index in 1..=300usize {
+            let (x, y, z) = position(index);
+            assert_eq!(container.get(x, y, z), BlockStateId(1), "index {index}");
+        }
+        assert!(
+            matches!(container, BlockPalette::Homogeneous(BlockStateId(1))),
+            "final container: {container:?}"
+        );
+    }
+
+    fn assert_mutation<const DIM: usize, V: Copy + Default + Hash + Eq + Debug>(
+        container: &mut PalettedContainer<V, DIM>,
+        expected: &mut [V],
+        (x, y, z): (usize, usize, usize),
+        value: V,
+    ) {
+        let linear = (y * DIM + z) * DIM + x;
+        assert_eq!(container.set(x, y, z, value), expected[linear]);
+        expected[linear] = value;
+        assert_eq!(container.collect_values(), expected);
+        if let PalettedContainer::Heterogeneous(data) = container {
+            assert_eq!(data.index_by_value.len(), data.palette.len());
+            for (slot, &(value, count)) in data.palette.iter().enumerate() {
+                assert_ne!(count, 0);
+                assert_eq!(data.index_by_value.get(&value), Some(&slot));
+                assert_eq!(
+                    usize::from(count),
+                    expected.iter().filter(|&&cell| cell == value).count()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn singleton_observers_reuse_slots_and_removal_remaps_every_last_slot_cell() {
+        use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+        use steel_registry::blocks::properties::{BlockStateProperties, Direction};
+        use steel_registry::vanilla_blocks;
+
+        init_vanilla_registry();
+        let observer = vanilla_blocks::OBSERVER.default_state();
+        let north = observer.set_value(&BlockStateProperties::FACING, Direction::North);
+        let east = observer.set_value(&BlockStateProperties::FACING, Direction::East);
+        let air = vanilla_blocks::AIR.default_state();
+        let mut container = BlockPalette::Homogeneous(air);
+        let mut expected = vec![air; BlockPalette::VOLUME];
+        let north_pos = (5, 3, 7);
+        let east_pos = (1, 6, 9);
+        for (pos, value) in [(north_pos, north), (east_pos, east)] {
+            assert_mutation(&mut container, &mut expected, pos, value);
+        }
+        let PalettedContainer::Heterogeneous(data) = &container else {
+            panic!("mixed section expected")
+        };
+        let words = data.indices.to_vec();
+        let observers = [
+            (north_pos, north, data.index_by_value[&north]),
+            (east_pos, east, data.index_by_value[&east]),
+        ];
+        for powered in [true, false] {
+            for (pos, state, slot) in observers {
+                let value = state.set_value(&BlockStateProperties::POWERED, powered);
+                assert_mutation(&mut container, &mut expected, pos, value);
+                let PalettedContainer::Heterogeneous(data) = &container else {
+                    panic!("observers should keep the section heterogeneous")
+                };
+                assert_eq!(&*data.indices, words);
+                assert_eq!(data.index_by_value[&value], slot);
+            }
+        }
+
+        // Removing the north slot must remap both cells using the last slot.
+        assert_mutation(&mut container, &mut expected, (2, 5, 13), east);
+        assert_mutation(&mut container, &mut expected, north_pos, east);
+        container.enter_building_mode();
+        assert_eq!(container.collect_values(), expected);
+        container.finalize_building();
+        assert_eq!(container.collect_values(), expected);
+    }
+
+    #[test]
+    fn biome_edits_preserve_all_cells_across_retention_and_narrowing() {
+        let point = |i: usize| (i % 4, i / 16, i / 4 % 4);
+        let mut container = BiomePalette::Homogeneous(0);
+        let mut expected = vec![0; BiomePalette::VOLUME];
+        for i in 1..=17 {
+            assert_mutation(&mut container, &mut expected, point(i), i as u16);
+        }
+        for i in 1..=16 {
+            assert_mutation(&mut container, &mut expected, point(i), 17);
+        }
+        let PalettedContainer::Heterogeneous(retained) = &container else {
+            panic!("mixed section")
+        };
+        assert_eq!(retained.bits, 8);
+        let mut written = Vec::new();
+        container
+            .write(&mut written)
+            .expect("the retained width should encode");
+        assert_eq!(
+            decode_written(&written, BiomePalette::VOLUME, 3),
+            expected.iter().copied().map(u32::from).collect::<Vec<_>>()
+        );
+        assert_mutation(&mut container, &mut expected, point(17), 18);
+        let PalettedContainer::Heterogeneous(narrowed) = &container else {
+            panic!("mixed section")
+        };
+        assert_eq!(narrowed.bits, 2);
+        for i in 1..=17 {
+            assert_mutation(&mut container, &mut expected, point(i), 0);
+        }
+        assert!(matches!(container, BiomePalette::Homogeneous(0)));
+    }
+
+    #[test]
+    fn remaps_every_lane_width_without_touching_other_indices() {
+        for bits in [1u8, 2, 4, 8, 16] {
+            let width = usize::from(bits);
+            let mask = (1u64 << bits) - 1;
+            let from = mask as usize;
+            let to = from / 3;
+            let mut rng = 0x9e37_79b9_7f4a_7c15;
+            let per_word = 64 / width;
+            let words: Vec<_> = (0..64)
+                .map(|i| xorshift(&mut rng) | (mask << (i % per_word * width)))
+                .collect();
+            let mut remapped = words.clone();
+
+            HeterogeneousPalette::<BlockStateId, 16>::remap_indices(&mut remapped, bits, from, to);
+            for (before, after) in words.into_iter().zip(remapped) {
+                for lane in 0..per_word {
+                    let shift = lane * width;
+                    let index = ((before >> shift) & mask) as usize;
+                    let expected = if index == from { to } else { index };
+                    assert_eq!(((after >> shift) & mask) as usize, expected, "{bits} bits");
+                }
+            }
+        }
     }
 
     #[test]
@@ -614,62 +973,6 @@ mod tests {
         assert_column_matches_get(&container, x, z);
     }
 
-    /// The written long array has no length prefix, so a wrong bit width
-    /// desyncs every section parsed after this one.
-    #[test]
-    fn block_global_palette_uses_registry_derived_bit_width_and_long_count() {
-        init_vanilla_registry();
-        let mut cube = Box::new([[[BlockStateId::default(); 16]; 16]; 16]);
-        let mut next_id = 1u16;
-        for slab in &mut cube {
-            for row in slab.iter_mut() {
-                for value in row.iter_mut() {
-                    *value = BlockStateId(next_id);
-                    next_id = next_id.wrapping_add(1);
-                }
-            }
-        }
-        let container = BlockPalette::from_cube(cube);
-
-        let mut written = Vec::new();
-        container
-            .write(&mut written)
-            .expect("writing a global-palette container should not fail");
-
-        let expected_bits = block_state_global_bits();
-        assert_eq!(written[0], expected_bits);
-        let values_per_long = 64 / usize::from(expected_bits);
-        let expected_longs = BlockPalette::VOLUME.div_ceil(values_per_long);
-        assert_eq!(written.len(), 1 + expected_longs * 8);
-    }
-
-    #[test]
-    fn biome_global_palette_uses_registry_derived_bit_width_and_long_count() {
-        init_vanilla_registry();
-        let mut cube = Box::new([[[0u16; 4]; 4]; 4]);
-        let mut next_id = 1u16;
-        for slab in &mut cube {
-            for row in slab.iter_mut() {
-                for value in row.iter_mut() {
-                    *value = next_id;
-                    next_id += 1;
-                }
-            }
-        }
-        let container = BiomePalette::from_cube(cube);
-
-        let mut written = Vec::new();
-        container
-            .write(&mut written)
-            .expect("writing a global-palette container should not fail");
-
-        let expected_bits = biome_global_bits();
-        assert_eq!(written[0], expected_bits);
-        let values_per_long = 64 / usize::from(expected_bits);
-        let expected_longs = BiomePalette::VOLUME.div_ceil(values_per_long);
-        assert_eq!(written.len(), 1 + expected_longs * 8);
-    }
-
     /// Reads `write` output the way the vanilla client does: a bits byte, the palette
     /// (absent for the global palette), then `64 / bits` entries per big-endian long.
     /// Returns each entry's global id.
@@ -690,16 +993,12 @@ mod tests {
         });
         let bits = usize::from(bits);
         let values_per_long = 64 / bits;
-        let longs: Vec<u64> = bytes[cursor.position() as usize..]
-            .as_chunks::<8>()
-            .0
-            .iter()
-            .map(|long| u64::from_be_bytes(*long))
-            .collect();
+        let (longs, remainder) = bytes[cursor.position() as usize..].as_chunks::<8>();
+        assert!(remainder.is_empty());
         assert_eq!(longs.len(), volume.div_ceil(values_per_long));
         (0..volume)
             .map(|index| {
-                let long = longs[index / values_per_long];
+                let long = u64::from_be_bytes(longs[index / values_per_long]);
                 let entry = (long >> ((index % values_per_long) * bits)) & ((1 << bits) - 1);
                 match &palette {
                     Some(palette) => palette[entry as usize],
@@ -722,7 +1021,7 @@ mod tests {
     fn written_block_sections_decode_to_their_values_for_every_strategy() {
         init_vanilla_registry();
         let mut rng = 0x9E37_79B9_7F4A_7C15_u64;
-        for distinct in [2u16, 16, 17, 33, 65, 129, 256, 257] {
+        for distinct in [1u16, 2, 3, 4, 5, 16, 17, 33, 65, 129, 256, 257, 4096] {
             let mut cube = Box::new([[[BlockStateId::default(); 16]; 16]; 16]);
             for (index, value) in cube.iter_mut().flatten().flatten().enumerate() {
                 // Every state appears at least once, the rest are random.
@@ -739,6 +1038,9 @@ mod tests {
                 .write(&mut written)
                 .expect("a valid container should encode");
 
+            if distinct > 256 {
+                assert_eq!(written[0], block_state_global_bits());
+            }
             let expected: Vec<u32> = container
                 .collect_values()
                 .iter()
@@ -755,7 +1057,7 @@ mod tests {
     #[test]
     fn written_biome_sections_decode_to_their_values_for_every_strategy() {
         init_vanilla_registry();
-        for distinct in [2u16, 3, 5, 9] {
+        for distinct in [1u16, 2, 3, 4, 5, 8, 9, 64] {
             let mut cube = Box::new([[[0u16; 4]; 4]; 4]);
             for (index, value) in cube.iter_mut().flatten().flatten().enumerate() {
                 *value = index as u16 % distinct;
@@ -766,6 +1068,9 @@ mod tests {
                 .write(&mut written)
                 .expect("a valid container should encode");
 
+            if distinct > 8 {
+                assert_eq!(written[0], biome_global_bits());
+            }
             let expected: Vec<u32> = container
                 .collect_values()
                 .iter()
@@ -800,28 +1105,31 @@ mod tests {
         assert!(written.is_empty(), "nothing should be written on failure");
     }
 
-    /// The encoder reuses a per-thread index table. A section holding a value missing from
-    /// its palette must be rejected even when an earlier section indexed that value.
     #[test]
-    fn write_rejects_value_missing_from_palette_after_it_was_indexed_elsewhere() {
-        let stray = BlockStateId(7);
-        let mut primer_cube = Box::new([[[BlockStateId(1); 16]; 16]; 16]);
-        primer_cube[0][0][1] = stray;
-        let mut written = Vec::new();
-        BlockPalette::from_cube(primer_cube)
-            .write(&mut written)
-            .expect("a valid container should encode");
+    fn write_rejects_bad_local_and_global_indices_before_writing_any_bytes() {
+        init_vanilla_registry();
+        for distinct in [3, 5, 17, 257] {
+            let mut cube = Box::new([[[BlockStateId(0); 16]; 16]; 16]);
+            for (i, value) in cube
+                .as_flattened_mut()
+                .as_flattened_mut()
+                .iter_mut()
+                .enumerate()
+            {
+                *value = BlockStateId((i % distinct) as u16);
+            }
+            let mut container = BlockPalette::from_cube(cube);
+            let BlockPalette::Heterogeneous(data) = &mut container else {
+                panic!("mixed section");
+            };
+            data.set_index_at(BlockPalette::VOLUME - 1, distinct);
 
-        let mut cube = Box::new([[[BlockStateId(1); 16]; 16]; 16]);
-        cube[0][0][1] = BlockStateId(2);
-        let mut corrupt = BlockPalette::from_cube(cube);
-        corrupt.set_without_palette_for_test(0, 0, 0, stray);
-
-        let mut written = Vec::new();
-        let error = corrupt
-            .write(&mut written)
-            .expect_err("a value missing from the palette must not encode");
-        assert_eq!(error.kind(), ErrorKind::InvalidData);
-        assert!(written.is_empty(), "nothing should be written on failure");
+            let mut written = Vec::new();
+            let error = container
+                .write(&mut written)
+                .expect_err("an out-of-range palette index must not encode");
+            assert_eq!(error.kind(), ErrorKind::InvalidData, "{distinct} states");
+            assert!(written.is_empty(), "{distinct} states");
+        }
     }
 }
