@@ -47,8 +47,10 @@ impl<'a, Phase> GenerationChunk<'a, Phase> {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) const fn for_test(chunk: &'a Chunk) -> Self {
+    /// Wraps `chunk` without the publication check, for tests that drive generation directly.
+    #[cfg(any(test, feature = "test-framework"))]
+    #[must_use]
+    pub const fn for_test(chunk: &'a Chunk) -> Self {
         Self::from_chunk(chunk)
     }
 
