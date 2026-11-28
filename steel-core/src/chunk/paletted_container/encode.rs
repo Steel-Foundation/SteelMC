@@ -278,7 +278,7 @@ fn widen_to_nibbles<'a, const BITS: usize>(
             & ((1 << (entries * BITS)) - 1);
 
         if BITS == 2 {
-            // code 3 has both bitset so with two entrie either code with high bit set is invalid
+            // With two entries either code with the high bit set is invalid
             let high_bits = (word >> 1) & LOW_BITS_OF_PAIRS;
             if (limit == 2 && high_bits != 0) || (limit == 3 && word & high_bits != 0) {
                 return Err(invalid_entry());
