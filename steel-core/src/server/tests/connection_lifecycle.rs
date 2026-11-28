@@ -1,4 +1,5 @@
 use std::{
+    io::Cursor,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -6,18 +7,26 @@ use std::{
     task::Poll,
 };
 
-use steel_protocol::packet_traits::{CompressionInfo, EncodedPacket};
+use steel_protocol::{
+    packet_reader::TCPNetworkDecoder,
+    packet_traits::{CompressionInfo, EncodedPacket},
+};
+use steel_registry::packets::play;
 use steel_utils::{
+    codec::VarInt,
     locks::{AsyncMutex, SyncMutex},
+    serial::WriteTo,
     translations,
 };
 use text_components::TextComponent;
-use tokio::{runtime::Builder, sync::mpsc};
+use tokio::{io::BufReader, runtime::Builder, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    player::connection::{JavaConnection, JavaNetworkWriter, NetworkConnection, OutboundPacket},
+    player::connection::{
+        JavaConnection, JavaNetworkWriter, JavaTransportRead, NetworkConnection, OutboundPacket,
+    },
     player::{ClientInformation, GameProfile, Player, PlayerConnection, PlayerSession},
     server::DuplicatePlayerWaitError,
     world::World,
@@ -58,6 +67,49 @@ fn java_test_player(
     ));
     assert!(session.bind_initial_player(&player));
     (player, receiver, network_writer)
+}
+
+#[test]
+fn malformed_play_payload_queues_disconnect() {
+    let world_fixture = fresh_test_world("malformed_play_payload");
+    let world = &world_fixture.world;
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime should initialize");
+    runtime.block_on(async {
+        let server = test_server(Arc::clone(world), super::PermissionSubjectIndex::new())
+            .await
+            .expect("test server should initialize");
+        let (player, mut receiver, _) =
+            java_test_player(&server, Arc::clone(world), Uuid::from_u128(1));
+        let PlayerConnection::Java(connection) = player.connection.as_ref() else {
+            panic!("test player should use a Java connection");
+        };
+
+        // A complete frame containing the keep-alive ID but missing its payload.
+        let mut frame = Vec::new();
+        VarInt::from(VarInt::written_size(play::S_KEEP_ALIVE))
+            .write(&mut frame)
+            .expect("frame length should encode");
+        VarInt(play::S_KEEP_ALIVE)
+            .write(&mut frame)
+            .expect("packet ID should encode");
+        let transport: JavaTransportRead = Box::new(Cursor::new(frame));
+        let reader = TCPNetworkDecoder::new(BufReader::new(transport));
+        connection.listener(reader, server).await;
+
+        assert!(connection.closed());
+        let Ok(OutboundPacket::Disconnect(packet)) = receiver.try_recv() else {
+            panic!("listener should queue a disconnect before closing");
+        };
+        let mut decoder = TCPNetworkDecoder::new(packet.encoded_data.as_slice());
+        let packet = decoder
+            .get_raw_packet()
+            .await
+            .expect("disconnect packet should decode");
+        assert_eq!(packet.id, play::C_DISCONNECT);
+    });
 }
 
 #[test]
