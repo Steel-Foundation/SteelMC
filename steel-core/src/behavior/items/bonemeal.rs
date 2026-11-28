@@ -3,10 +3,17 @@ use std::sync::Arc;
 use rand::RngExt;
 use steel_macros::item_behavior;
 use steel_registry::{
-    blocks::{block_state_ext::BlockStateExt, shapes::is_offset_shape_full_block},
+    REGISTRY, TaggedRegistryExt as _,
+    blocks::{
+        block_state_ext::BlockStateExt, properties::BlockStateProperties,
+        shapes::is_offset_shape_full_block,
+    },
     data_components::vanilla_components::USE_EFFECTS,
     item_stack::ItemStack,
-    level_events, vanilla_blocks, vanilla_game_events,
+    level_events,
+    vanilla_biome_tags::BiomeTag,
+    vanilla_block_tags::BlockTag,
+    vanilla_blocks, vanilla_game_events,
 };
 use steel_utils::{BlockPos, Direction, types::UpdateFlags};
 
@@ -53,7 +60,7 @@ impl BoneMealItem {
         false
     }
 
-    fn grow_water_plant(world: &Arc<World>, pos: BlockPos, _clicked_face: Direction) -> bool {
+    fn grow_water_plant(world: &Arc<World>, pos: BlockPos, clicked_face: Direction) -> bool {
         let state = world.get_block_state(pos);
         if state.get_block() != &vanilla_blocks::WATER || !state.get_fluid_state().is_full() {
             return false;
@@ -70,7 +77,7 @@ impl BoneMealItem {
 
         'outer: for i in 0..128 {
             let mut new_pos = pos;
-            let new_state = vanilla_blocks::SEAGRASS.default_state();
+            let mut state_to_grow = vanilla_blocks::SEAGRASS.default_state();
 
             for _ in 0..(i / 16) {
                 new_pos = new_pos.offset(
@@ -88,18 +95,64 @@ impl BoneMealItem {
                 }
             }
 
-            // TODO: implement coral and underwater bonemeal tag selection.
+            if world
+                .biome_at(new_pos)
+                .is_some_and(|biome| biome.has_tag(&BiomeTag::PRODUCES_CORALS_FROM_BONEMEAL))
+            {
+                if i == 0 && clicked_face.is_horizontal() {
+                    if let Some(corals) = REGISTRY.blocks.get_tag(&BlockTag::WALL_CORALS) {
+                        let mut state = corals[rng.random_range(0..corals.len())].default_state();
+                        if state
+                            .try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                            .is_some()
+                        {
+                            state = state
+                                .set_value(&BlockStateProperties::HORIZONTAL_FACING, clicked_face);
+                        }
+                        state_to_grow = state;
+                    }
+                } else if rng.random_range(0..4) == 0
+                    && let Some(plants) = REGISTRY.blocks.get_tag(&BlockTag::UNDERWATER_BONEMEALS)
+                    && !plants.is_empty()
+                {
+                    state_to_grow = plants[rng.random_range(0..plants.len())].default_state();
+                }
+            }
 
-            let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(new_state) else {
+            if state_to_grow.get_block().has_tag(&BlockTag::WALL_CORALS)
+                && state_to_grow
+                    .try_get_value(&BlockStateProperties::HORIZONTAL_FACING)
+                    .is_some()
+            {
+                for _ in 0..4 {
+                    let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state_to_grow)
+                    else {
+                        break;
+                    };
+                    if behavior.can_survive(state_to_grow, world, new_pos) {
+                        break;
+                    }
+                    let direction = [
+                        Direction::North,
+                        Direction::East,
+                        Direction::South,
+                        Direction::West,
+                    ][rng.random_range(0..4)];
+                    state_to_grow = state_to_grow
+                        .set_value(&BlockStateProperties::HORIZONTAL_FACING, direction);
+                }
+            }
+
+            let Some(behavior) = BLOCK_BEHAVIORS.get_behavior_for_state(state_to_grow) else {
                 return false;
             };
 
-            if behavior.can_survive(new_state, world, new_pos) {
+            if behavior.can_survive(state_to_grow, world, new_pos) {
                 let current_state = world.get_block_state(new_pos);
                 if current_state.get_block() == &vanilla_blocks::WATER
                     && current_state.get_fluid_state().is_full()
                 {
-                    world.set_block(new_pos, new_state, UpdateFlags::UPDATE_ALL);
+                    world.set_block(new_pos, state_to_grow, UpdateFlags::UPDATE_ALL);
                 } else if current_state.get_block() == &vanilla_blocks::SEAGRASS
                     && bonemealable.is_valid_bonemeal_target(current_state, world.as_ref(), new_pos)
                     && rng.random_range(0..10) == 0
