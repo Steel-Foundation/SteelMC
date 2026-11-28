@@ -1,9 +1,9 @@
 use steel_utils::types::GameType;
 
 use super::{
-    ADVANCE_TIME, BlockPos, CChangeDifficulty, ChunkPos, Difficulty, Digest, ErasedGameRuleRef,
-    GameRule, GameRuleValue, GameRuleValueType, LevelDataManager, OffsetVoxelShape, Ordering,
-    Player, REGISTRY, SectionPos, Sha256, World, vanilla_dimension_types,
+    ADVANCE_TIME, BlockPos, CChangeDifficulty, ChunkPos, Difficulty, ErasedGameRuleRef, GameRule,
+    GameRuleValue, GameRuleValueType, LevelDataManager, OffsetVoxelShape, Ordering, Player,
+    REGISTRY, SectionPos, World, obfuscate_biome_seed, vanilla_dimension_types,
 };
 
 impl World {
@@ -254,22 +254,9 @@ impl World {
         self.level_data.read().data().seed
     }
 
-    /// Gets the obfuscated seed for sending to clients.
-    ///
-    /// This uses SHA-256 hashing to prevent clients from easily extracting
-    /// the actual world seed, matching vanilla's `BiomeManager.obfuscateSeed()`.
+    /// Returns the obfuscated seed sent to clients for biome-derived visuals.
     #[must_use]
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "panic is unreachable: SHA-256 always produces 32 bytes"
-    )]
     pub fn obfuscated_seed(&self) -> i64 {
-        let seed = self.seed();
-        let mut hasher = Sha256::new();
-        hasher.update(seed.to_be_bytes());
-        let result = hasher.finalize();
-        // SHA-256 always produces 32 bytes, so taking 8 bytes always succeeds
-        let bytes: [u8; 8] = result[0..8].try_into().expect("SHA-256 produces 32 bytes");
-        i64::from_be_bytes(bytes)
+        obfuscate_biome_seed(self.seed())
     }
 }

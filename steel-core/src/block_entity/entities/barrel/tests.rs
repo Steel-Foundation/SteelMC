@@ -346,6 +346,104 @@ fn opening_generates_loot_but_spectators_leave_pending_barrels_closed() {
 }
 
 #[test]
+fn barrel_tracks_viewers_and_rechecks_open_state() {
+    use crate::player::ResetReason;
+    use crate::test_support::{TestPlayerBuilder, tick_test_world, use_block};
+    use steel_registry::blocks::block_state_ext::BlockStateExt as _;
+    use steel_utils::types::GameType;
+
+    init_vanilla_registry();
+    init_behaviors();
+    init_block_entities();
+
+    let fixture = fresh_test_world("barrel_openers");
+    let world = &fixture.world;
+    let pos = BlockPos::new(5, 64, 5);
+    let center = ChunkPos::from_block_pos(pos);
+
+    // Block ticking requires the center chunk and its eight neighbors to be Full.
+    insert_ready_full_chunk(world, center);
+    for neighbor in center.neighbors() {
+        insert_ready_full_chunk(world, neighbor);
+    }
+
+    assert!(world.set_block(
+        pos,
+        vanilla_blocks::BARREL.default_state(),
+        UpdateFlags::UPDATE_NONE,
+    ));
+
+    let is_open = || {
+        world
+            .get_block_state(pos)
+            .get_value(&BlockStateProperties::OPEN)
+    };
+
+    let first = TestPlayerBuilder::new(Arc::clone(world), "First", 1).build();
+    let second = TestPlayerBuilder::new(Arc::clone(world), "Second", 2).build();
+
+    for player in [&first, &second] {
+        player.set_client_loaded(true);
+        player
+            .base()
+            .set_position_local(pos.above().get_bottom_center());
+        assert!(world.add_player(Arc::clone(player), ResetReason::InitialJoin));
+    }
+
+    world.chunk_map.advance_scheduling();
+    assert!(
+        world
+            .chunk_map
+            .is_block_ticking_full_chunk_simulated(center)
+    );
+
+    use_block(world, pos, &first);
+    assert!(is_open(), "the first viewer opens the barrel immediately");
+
+    use_block(world, pos, &second);
+    first.do_close_container();
+    assert!(is_open(), "the second viewer still has the barrel open");
+
+    for tick in 1..=5 {
+        tick_test_world(world, tick, true);
+    }
+    assert!(is_open(), "the recheck must count the remaining viewer");
+    assert!(
+        world.has_scheduled_block_tick(pos, &vanilla_blocks::BARREL),
+        "a live viewer schedules the next recheck",
+    );
+
+    second.restore_game_modes(GameType::Spectator, None);
+    for tick in 6..10 {
+        tick_test_world(world, tick, true);
+        assert!(is_open(), "the next recheck is due on tick ten");
+    }
+
+    tick_test_world(world, 10, true);
+    assert!(
+        second.has_container_open(),
+        "the spectator still has the menu open",
+    );
+    assert!(!is_open(), "spectators do not count as barrel viewers");
+    assert!(!world.has_scheduled_block_tick(pos, &vanilla_blocks::BARREL));
+    second.do_close_container();
+
+    use_block(world, pos, &first);
+    assert!(is_open());
+    first.do_close_container();
+    assert!(!is_open(), "the last close updates the barrel immediately");
+
+    world.remove_player_for_world_change(&first);
+    world.remove_player_for_world_change(&second);
+    let chunk_map = &world.chunk_map;
+    chunk_map.stop_generation_refill_loop();
+    chunk_map.task_tracker.close();
+    chunk_map
+        .chunk_runtime
+        .block_on(chunk_map.task_tracker.wait());
+}
+
+#[test]
 fn placed_container_loot_component_remains_lazy() {
     use steel_registry::data_components::DataComponentPatch;
     let barrel = test_barrel();
