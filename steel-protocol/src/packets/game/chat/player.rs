@@ -35,6 +35,13 @@ impl ChatTypeBound {
             target_name: None,
         }
     }
+
+    /// Set the target name
+    #[must_use]
+    pub fn with_target_name(mut self, target_name: TextComponent) -> Self {
+        self.target_name = Some(target_name);
+        self
+    }
 }
 
 impl Default for ChatTypeBound {
