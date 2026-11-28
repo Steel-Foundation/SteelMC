@@ -13,8 +13,7 @@ use steel_utils::{BlockPos as SteelBlockPos, BlockStateId, Identifier};
 ///
 /// Returns `None` if the block ID is unknown or if any property is invalid.
 pub fn flint_block_to_state_id(block: &Block) -> Option<BlockStateId> {
-    let block_id = block.id.strip_prefix("minecraft:").unwrap_or(&block.id);
-    let identifier = Identifier::vanilla(block_id.to_string());
+    let identifier = block.id.parse::<Identifier>().ok()?;
 
     let block_ref = REGISTRY.blocks.by_key(&identifier)?;
 
@@ -98,6 +97,12 @@ mod tests {
         for id in ["minecraft:stone", "stone"] {
             let state_id = flint_block_to_state_id(&Block::new(id)).expect("known block");
             assert_eq!(state_id_to_block(state_id).id, "minecraft:stone");
+        }
+        for id in ["custom:stone", "invalid!id"] {
+            assert!(
+                flint_block_to_state_id(&Block::new(id)).is_none(),
+                "Expected None for {id}"
+            );
         }
     }
 }

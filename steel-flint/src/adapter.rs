@@ -20,7 +20,9 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use steel_core::behavior::block_behaviors::PLAIN_BLOCKS;
 use steel_core::behavior::item_behaviors::PLAIN_ITEMS;
-use steel_core::behavior::{BLOCK_BEHAVIORS, DefaultItemBehavior, ITEM_BEHAVIORS};
+use steel_core::behavior::{
+    BLOCK_BEHAVIORS, DefaultBlockBehavior, DefaultItemBehavior, ITEM_BEHAVIORS,
+};
 use steel_core::entity::ENTITIES;
 use steel_registry::blocks::BlockRef;
 use steel_registry::{REGISTRY, RegistryExt};
@@ -49,7 +51,7 @@ fn implemented_blocks() -> impl Iterator<Item = BlockRef> {
         .get_behaviors()
         .iter()
         .enumerate()
-        .filter(|(_, behavior)| !behavior.type_name().ends_with("DefaultBlockBehavior"))
+        .filter(|(_, behavior)| behavior.type_name() != type_name::<DefaultBlockBehavior>())
         .filter_map(|(id, _)| REGISTRY.blocks.by_id(id))
         .chain(PLAIN_BLOCKS.iter().copied())
 }

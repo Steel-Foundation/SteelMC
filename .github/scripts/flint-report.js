@@ -39,7 +39,7 @@ function mergeBaseline(base, curr) {
 const newIds = (current, base) => sorted(current.filter((id) => !base.includes(id)));
 
 const regressionLine = (r) => `${r.name}${r.missing ? " (missing from results)" : ""}`;
-const passedCount = (tests) => tests.filter((t) => t.success).length;
+const passedCount = (tests) => tests.filter((t) => t.success && !t.skipped).length;
 
 function newlyImplementedSection(summary, currentIds, baseIds) {
   if (!currentIds || !baseIds) return ["No implemented-id list for this run or master yet — skipped."];
@@ -80,17 +80,25 @@ function buildReport({ summary, regressions, currentIds, baseIds, runUrl }) {
   if (errors.length > 0) {
     lines.push("", "### Errors", ...errors.map((test) => `- :x: \`${test.name}\`: ${test.error}`));
   }
+  const actualRegressions = regressions?.filter((test) => !test.missing) ?? [];
+  const missing = regressions?.filter((test) => test.missing) ?? [];
   lines.push("", "### Regressions");
   if (!regressions) {
     lines.push("No baseline comparison available. See the workflow run for details.");
-  } else if (regressions.every((test) => test.missing)) {
+  } else if (regressions.length === 0) {
     lines.push("None :white_check_mark:");
+  } else if (actualRegressions.length === 0) {
+    lines.push("None among executed tests (:warning: some baseline tests did not run).");
   } else {
-    lines.push(...regressions.filter((test) => !test.missing).map((test) => `- :x: \`${test.name}\``));
+    lines.push(...actualRegressions.map((test) => `- :x: \`${test.name}\``));
   }
-  const missing = regressions?.filter((test) => test.missing) ?? [];
   if (missing.length > 0) {
-    lines.push("", "### Baseline tests that did not run", ...missing.map((test) => `- \`${test.name}\``));
+    const panicked = errors.some((test) => test.error === "Flint test panicked");
+    lines.push("", "### Baseline tests that did not run");
+    if (panicked) {
+      lines.push("The test suite aborted early after a panic, so these baseline tests did not run:");
+    }
+    lines.push(...missing.map((test) => `- \`${test.name}\``));
   }
   lines.push("", "### Newly implemented blocks/items", ...newlyImplementedSection(summary, currentIds, baseIds));
   lines.push(
@@ -124,16 +132,27 @@ function validateInputs({ core }) {
   }
 
   const errors = curr.filter((test) => test.error);
+  const panics = errors.filter((test) => test.error === "Flint test panicked");
+  const hasPassing = curr.some((test) => test.success && !test.skipped);
+  const formatErrors = (list) => list.map((test) => `${test.name}: ${test.error}`).join("\n");
+
   const base = readJson(BASELINE);
   if (!base) {
-    if (errors.length > 0) {
-      core.setFailed(errors.map((test) => `${test.name}: ${test.error}`).join("\n"));
+    if (panics.length > 0) {
+      core.setFailed(formatErrors(panics));
     } else if (master && !bootstrap) {
       core.setFailed(`Flint baseline unavailable for ${benchmarkSha}. Use an explicit master bootstrap for a new revision.`);
-    } else if (bootstrap && !curr.some((test) => test.success && !test.skipped)) {
+    } else if (bootstrap && !hasPassing) {
       core.setFailed("Cannot bootstrap a baseline without a passing Flint test");
+    } else if (errors.length > 0 && !hasPassing) {
+      core.setFailed(formatErrors(errors));
     } else {
-      core.warning(`No Flint baseline available for ${benchmarkSha}`);
+      if (errors.length > 0) {
+        core.warning(`Non-blocking Flint test errors:\n${formatErrors(errors)}`);
+      }
+      if (!bootstrap) {
+        core.warning(`No Flint baseline available for ${benchmarkSha}`);
+      }
     }
     return;
   }
@@ -149,9 +168,23 @@ function validateInputs({ core }) {
 
   const regressions = findRegressions(base.tests, curr);
   fs.writeFileSync(REGRESSIONS, JSON.stringify(regressions, null, 2));
-  if (errors.length > 0) {
-    core.setFailed(errors.map((test) => `${test.name}: ${test.error}`).join("\n"));
+  if (panics.length > 0) {
+    core.setFailed(formatErrors(panics));
     return;
+  }
+  if (errors.length > 0 && !hasPassing) {
+    core.setFailed(formatErrors(errors));
+    return;
+  }
+  const basePassed = new Set(names(base.tests.filter((test) => test.success)));
+  const baselineErrors = errors.filter((test) => basePassed.has(test.name));
+  if (baselineErrors.length > 0) {
+    core.setFailed(formatErrors(baselineErrors));
+    return;
+  }
+  const newErrors = errors.filter((test) => !basePassed.has(test.name));
+  if (newErrors.length > 0) {
+    core.warning(`Non-blocking Flint test errors in non-baseline tests:\n${formatErrors(newErrors)}`);
   }
   const missing = regressions.filter((test) => test.missing);
   if (missing.length > 0) {

@@ -38,6 +38,7 @@ use steel_core::server::{Server, test_server_with_worlds_and_config};
 use steel_core::world::{LevelReader, World, WorldConfig, WorldStorageConfig};
 use steel_core::worldgen::{ChunkGeneratorType, EmptyChunkGenerator};
 use steel_registry::blocks::block_state_ext::BlockStateExt;
+use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::vanilla_dimension_types::OVERWORLD;
 use steel_registry::{REGISTRY, RegistryExt};
 use steel_utils::Identifier;
@@ -222,6 +223,16 @@ impl SteelTestWorld {
         bail!("Chunk {chunk_pos:?} did not enter tickable snapshot within 30s");
     }
 
+    fn resolve_entity_type(entity_type: &str) -> anyhow::Result<EntityTypeRef> {
+        let key = entity_type
+            .parse::<Identifier>()
+            .map_err(|e| anyhow::anyhow!("Invalid entity type identifier '{entity_type}': {e}"))?;
+        REGISTRY
+            .entity_types
+            .by_key(&key)
+            .ok_or_else(|| anyhow::anyhow!("Unknown entity type '{key}'"))
+    }
+
     fn entity_by_alias(&self, alias: &str) -> anyhow::Result<SharedEntity> {
         let uuid = self
             .entities
@@ -372,20 +383,16 @@ impl FlintWorld for SteelTestWorld {
         pos: [f64; 3],
         nbt: Option<&EntityNbt>,
     ) -> anyhow::Result<()> {
-        let key = entity_type
-            .parse::<Identifier>()
-            .map_err(|e| anyhow::anyhow!("Invalid entity type identifier '{entity_type}': {e}"))?;
-        let entity_type = REGISTRY
-            .entity_types
-            .by_key(&key)
-            .ok_or_else(|| anyhow::anyhow!("Unknown entity type '{key}'"))?;
+        let entity_type = Self::resolve_entity_type(entity_type)?;
         let entity = ENTITIES
             .create(
                 entity_type,
                 DVec3::new(pos[0], pos[1], pos[2]),
                 Arc::downgrade(&self.world),
             )
-            .ok_or_else(|| anyhow::anyhow!("No entity factory registered for '{key}'"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("No entity factory registered for '{}'", entity_type.key)
+            })?;
         if let Some(nbt) = nbt {
             let compound = parse_snbt_compound(&nbt.to_snbt())?;
             let mut bytes = Vec::new();
@@ -396,7 +403,7 @@ impl FlintWorld for SteelTestWorld {
         let uuid = entity.uuid();
         self.world
             .try_add_entity(entity)
-            .map_err(|e| anyhow::anyhow!("Failed to add '{key}' to world: {e:?}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to add '{}' to world: {e:?}", entity_type.key))?;
         self.entities.insert(alias.to_string(), uuid);
         Ok(())
     }
@@ -440,13 +447,10 @@ impl FlintWorld for SteelTestWorld {
             WORLD_EXTENT,
         );
 
-        let wanted = entity_type
-            .strip_prefix("minecraft:")
-            .unwrap_or(entity_type);
-        let entities = self.world.get_entities_in_aabb_matching(&aabb, |entity| {
-            let key = &entity.entity_type().key;
-            key.namespace == "minecraft" && key.path == wanted
-        });
+        let expected_type = Self::resolve_entity_type(entity_type)?;
+        let entities = self
+            .world
+            .get_entities_in_aabb_matching(&aabb, |entity| entity.entity_type() == expected_type);
 
         Ok(entities
             .iter()
