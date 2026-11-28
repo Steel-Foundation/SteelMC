@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ATTACHED","DISARMED","EAST","HORIZONTAL_FACING","NORTH","POWERED","RECHECK_PERIOD","SOUTH","WEST","WIRE_DISTANCE_MAX"],"mod":["block","hook"],"struct":["TripWireBlock","TripWireHookBlock"]};

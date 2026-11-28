@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_potion_contents","to_runtime_instance","to_runtime_instance_icon_from_visibility"]};

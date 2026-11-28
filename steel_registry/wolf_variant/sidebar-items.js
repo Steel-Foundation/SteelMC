@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["WolfAssetInfo","WolfVariant","WolfVariantRegistry"],"type":["WolfVariantRef"]};

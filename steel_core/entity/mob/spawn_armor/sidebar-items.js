@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["VANILLA_SPAWN_ARMOR_TIERS"],"struct":["SpawnArmorTier"]};

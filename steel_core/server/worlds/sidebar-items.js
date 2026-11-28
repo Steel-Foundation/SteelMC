@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["END_WORLD_NAME","NETHER_WORLD_NAME","OVERWORLD_WORLD_NAME"],"fn":["end_entry_portal_target_world_name","nether_portal_target_world_name"],"struct":["WorldMap"]};

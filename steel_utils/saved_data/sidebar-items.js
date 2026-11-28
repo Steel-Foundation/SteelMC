@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["invalid_binary_data","is_valid_saved_data_name"],"mod":["names"],"struct":["SavedDataManager","SavedDataName","WincodeSavedDataName"]};

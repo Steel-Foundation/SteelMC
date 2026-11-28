@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["ender_pearl","eye_of_ender","firework_rocket","fishing_hook","lingering_potion","small_fireball","snowball","splash_potion","thrown_egg","wind_charge"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FOSSIL_COUNT","SEA_LEVEL"],"fn":["find_generation_point","make_nether_fossil_piece","resolve_vertical_anchor","sample_height"],"struct":["FossilResult","NetherFossilStructure"]};

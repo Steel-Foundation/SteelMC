@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SCULK_DEFAULT_SPREAD_TYPES","SCULK_SAME_SPACE_SPREAD_TYPES"],"enum":["SculkBehaviorKind","SculkSpreadType"],"struct":["SculkChargeCursor","SculkSpreadPos","SculkSpreader"]};

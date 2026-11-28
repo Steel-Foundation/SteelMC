@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_weather_state","next_copper_stage","previous_copper_stage"]};

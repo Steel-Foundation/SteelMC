@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["OperatorAction"],"fn":["deop_command","deop_registration","op_command","op_registration","run_operation","start_operation","update_groups","update_operator_group"],"struct":["OperatorCommandResult","OperatorCommandSuspension"]};

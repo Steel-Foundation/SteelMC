@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["ensure_spawnable_position","finite_rotation","wrap_rotation"]};

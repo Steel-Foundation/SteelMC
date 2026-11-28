@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["KNOWN_PLAYERS_DATA_VERSION","KNOWN_PLAYERS_MAGIC","KNOWN_PLAYERS_STORAGE_VERSION"],"fn":["decode_known_players_file","encode_known_players_file"],"struct":["KnownPlayerFile","KnownPlayersFile"]};

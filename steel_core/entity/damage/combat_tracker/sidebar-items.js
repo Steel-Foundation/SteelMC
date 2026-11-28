@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INTENTIONAL_GAME_DESIGN_BUG","INTENTIONAL_GAME_DESIGN_BUG_ID","RESET_COMBAT_STATUS_TIME","RESET_DAMAGE_STATUS_TIME"],"enum":["FallLocation"],"fn":["assisted_fall_message","death_message","fall_message","most_significant_fall"],"struct":["CombatEntry","CombatTracker"]};

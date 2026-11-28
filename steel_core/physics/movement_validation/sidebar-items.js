@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MOVEMENT_ERROR_THRESHOLD","Y_TOLERANCE"],"fn":["movement_error_delta"],"struct":["ClientAuthoredMovementState","MovementCollisionValidation"]};

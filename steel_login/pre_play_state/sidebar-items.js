@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConfigurationPhase","LoginPhase","LoginState","PrePlayPacket","PrePlayPhase","State"],"struct":["PacketSequenceError","PrePlayState"]};

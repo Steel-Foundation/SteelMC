@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["does_block_have_partial_collision"],"struct":["WalkPathEvaluator"]};

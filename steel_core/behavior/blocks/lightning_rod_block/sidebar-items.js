@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ACTIVATION_TICKS","FACING","POWERED","WATERLOGGED"],"struct":["LightningRodBlock"]};

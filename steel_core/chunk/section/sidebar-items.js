@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLOCKS_PER_SECTION","STABLE_AIR_OCCUPANCY_ROW_COUNT"],"enum":["StableAirOccupancy"],"fn":["is_stable_vanilla_air"],"struct":["BlockStateSectionCounts","ChunkSection","RandomTickSectionBits","SectionHolder","SectionWriteGuard","Sections"]};

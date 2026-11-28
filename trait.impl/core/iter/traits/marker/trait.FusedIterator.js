@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["steel_core",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/marker/trait.FusedIterator.html\" title=\"trait core::iter::traits::marker::FusedIterator\">FusedIterator</a> for <a class=\"struct\" href=\"steel_core/entity/manager/struct.IndexedOrderedEntityIdsIter.html\" title=\"struct steel_core::entity::manager::IndexedOrderedEntityIdsIter\">IndexedOrderedEntityIdsIter</a>&lt;'_&gt;",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/marker/trait.FusedIterator.html\" title=\"trait core::iter::traits::marker::FusedIterator\">FusedIterator</a> for <a class=\"struct\" href=\"steel_core/chunk/light/cache/struct.LightCacheSetupChunks.html\" title=\"struct steel_core::chunk::light::cache::LightCacheSetupChunks\">LightCacheSetupChunks</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/marker/trait.FusedIterator.html\" title=\"trait core::iter::traits::marker::FusedIterator\">FusedIterator</a> for <a class=\"struct\" href=\"steel_core/chunk/light/cache/struct.LightChunkSectionSlots.html\" title=\"struct steel_core::chunk::light::cache::LightChunkSectionSlots\">LightChunkSectionSlots</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/marker/trait.FusedIterator.html\" title=\"trait core::iter::traits::marker::FusedIterator\">FusedIterator</a> for <a class=\"struct\" href=\"steel_core/chunk/light/queue/struct.LightDirectionSetIter.html\" title=\"struct steel_core::chunk::light::queue::LightDirectionSetIter\">LightDirectionSetIter</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1608]}

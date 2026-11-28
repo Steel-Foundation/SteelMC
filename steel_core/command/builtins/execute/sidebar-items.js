@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["command","objective","registration","source_command_storage","source_scoreboard"],"mod":["condition","source","store"]};

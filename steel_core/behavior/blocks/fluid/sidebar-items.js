@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DRAG","LEVEL"],"mod":["bubble_column_block","liquid_block"],"struct":["BubbleColumnBlock","LiquidBlock"]};

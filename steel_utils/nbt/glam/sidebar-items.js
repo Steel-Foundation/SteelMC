@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["mat4_from_nbt_tag","numeric_f32_list","quat_from_nbt_tag","quat_to_nbt_tag","vec3_from_nbt_tag","vec3_to_nbt_tag"],"struct":["AxisAngle4f"]};

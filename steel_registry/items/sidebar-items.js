@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["item"],"struct":["Item","ItemRegistry"],"type":["ItemRef"]};

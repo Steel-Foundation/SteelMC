@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CARVER_RANGE","MAX_TUNNEL_DISTANCE"],"fn":["get_thickness"],"struct":["TunnelParams","TunnelState"]};

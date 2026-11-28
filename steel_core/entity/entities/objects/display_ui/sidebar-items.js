@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["item_frame","leash_fence_knot"]};

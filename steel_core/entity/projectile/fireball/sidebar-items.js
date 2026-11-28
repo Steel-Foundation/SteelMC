@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ITEM_TAG"],"trait":["Fireball"]};

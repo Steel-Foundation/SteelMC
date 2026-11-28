@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FACING","TYPE","WATERLOGGED"],"struct":["ChestBlock","ChestContainer"]};

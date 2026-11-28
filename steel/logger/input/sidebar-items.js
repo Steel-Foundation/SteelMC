@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ExtendedKey"],"fn":["copy_to_clipboard","dispatch_command","next","previous","search_key","send_state"]};

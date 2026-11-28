@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AGE","BAMBOO_LEAVES_PROPERTY","MAX_BAMBOO_HEIGHT","STAGE"],"struct":["BambooStalkBlock"]};

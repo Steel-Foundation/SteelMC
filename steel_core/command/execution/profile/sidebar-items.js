@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["GameProfileArgument","GameProfileSuggestionMode"],"struct":["GameProfileParser","ResolvedGameProfile"]};

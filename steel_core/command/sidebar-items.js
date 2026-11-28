@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["client_permission_event","client_permission_event_for_capabilities","incorrectly_typed_argument","missing_argument"],"mod":["api","brigadier","builtins","execution","protocol","queue","registration","sender","signing_context","storage"],"struct":["CommandCompletion"],"type":["CommandDispatcher"]};

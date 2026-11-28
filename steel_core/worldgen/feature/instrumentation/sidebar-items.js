@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["atomic_max","duration_nanos","nanos_to_ms","ore_profile_enabled","ratio"],"static":["ORE_PROFILE_ENABLED","ORE_PROFILE_LOG_EVERY","ORE_TOTALS"],"struct":["OreFeatureProfile","OreFeatureStats","OreProfileTotals"],"type":["SectionKey"]};

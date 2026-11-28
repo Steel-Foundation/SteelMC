@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BED_SLEEP_POSITION_OFFSET","WATER_SENSITIVE_DAMAGE"],"fn":["death_loot_items_with_rng","random_teleport_ground_y","shearing_loot_items","shearing_loot_items_with_rng"],"trait":["LivingEntity"]};

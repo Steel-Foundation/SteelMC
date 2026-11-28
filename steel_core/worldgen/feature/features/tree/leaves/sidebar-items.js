@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LEAF_DISTANCE_LIMIT"],"fn":["take_frontier_position"]};

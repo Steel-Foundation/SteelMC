@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POWERED","RAIL_SHAPE","WATERLOGGED"],"mod":["base_rail_block","detector_rail_block","powered_rail_block","rail_block","rail_state"],"struct":["BaseRailBlock","DetectorRailBlock","PoweredRailBlock","RailBlock"]};

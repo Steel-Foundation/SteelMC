@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["absorption","bad_omen","heal_or_harm","hunger","infested","oozing","poison","raid_omen","regeneration","saturation","weaving","wind_charged","wither"],"trait":["InstantaneousMobEffect","MobEffectBehavior"]};

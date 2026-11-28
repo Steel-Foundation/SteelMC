@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BundlePredicate","ContainerPredicate","CustomDataPredicate","DamagePredicate","EnchantmentPredicate","EnchantmentsPredicate","PotionsPredicate","StoredEnchantmentsPredicate"]};

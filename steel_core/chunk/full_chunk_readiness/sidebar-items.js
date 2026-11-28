@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BLOCK_TICKING_FULL_COUNT","ENTITY_TICKING_FULL_COUNT"],"enum":["FullNeighborhoodError"],"struct":["FullNeighborhoodCounts","FullNeighborhoodIndex","FullPublication","FullPublicationQueue","PendingReadiness"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FULL_STEP"],"enum":["RegionGenerationError"],"fn":["region_conflict_distance","region_positions","region_step_dependencies","region_step_order","region_step_radii"],"type":["RegionTask"]};

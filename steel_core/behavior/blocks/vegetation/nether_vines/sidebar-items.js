@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_blocks_to_grow_when_bonemealed"]};

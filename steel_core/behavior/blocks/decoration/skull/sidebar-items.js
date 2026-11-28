@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InvalidPlacementError","SkullPlacement"],"mod":["abstract_skull_block","piglin_wall_skull_block","player_head_block","player_wall_head_block","skull_block","wall_skull_block","wither_skull_block","wither_wall_skull_block"],"struct":["Skull","SkullData","SkullType"],"type":["SkullTypeRef"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_MESSAGE_LENGTH"],"struct":["Message"]};

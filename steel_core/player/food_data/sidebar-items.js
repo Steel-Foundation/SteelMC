@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FoodTickResult"],"fn":["saturation_by_modifier"],"mod":["food_constants"],"struct":["FoodData"]};

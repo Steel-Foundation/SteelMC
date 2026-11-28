@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["place_child_piece"],"mod":["helpers","room_core","room_double","room_simple","room_special","shell"]};

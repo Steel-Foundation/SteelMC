@@ -1,0 +1,2 @@
+window.ALL_CRATES = [{"c":"steel"},{"c":"steel_core"},{"c":"steel_crypto"},{"c":"steel_flint"},{"c":"steel_login"},{"c":"steel_macros"},{"c":"steel_math"},{"c":"steel_protocol"},{"c":"steel_registry"},{"c":"steel_utils"},{"c":"steel_worldgen"}];
+//{"start":21,"fragment_lengths":[13,19,21,20,20,21,19,23,23,20,23]}

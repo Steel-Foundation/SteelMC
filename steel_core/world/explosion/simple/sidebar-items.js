@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IMMUNE_BLOCK_RESISTANCE"],"struct":["SimpleExplosionDamageCalculator"]};

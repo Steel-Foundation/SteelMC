@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["abstract_furnace","barrel","beacon","beehive","bell","brushable","campfire","chest","chiseled_bookshelf","comparator","conduit","daylight_detector","enchanting_table","end_gateway","end_portal","ender_chest","jukebox","piston_moving","potent_sulfur","shulker_box","sign","skull","spawner","unimplemented"]};

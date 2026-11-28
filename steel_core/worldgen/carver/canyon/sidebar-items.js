@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CARVER_RANGE","MAX_TUNNEL_DISTANCE"],"fn":["should_skip_canyon"],"struct":["CanyonState","CanyonTunnel"]};

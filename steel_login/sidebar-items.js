@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_valid_player_name","offline_uuid"],"mod":["authentication","connection","handlers","pre_play_state","tcp_client"],"struct":["ClientInformation","GameProfile","JavaConnection"]};

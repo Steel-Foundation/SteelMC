@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["base_spawner","spawn_data"],"struct":["SpawnerBlockEntity"],"trait":["Spawner"]};

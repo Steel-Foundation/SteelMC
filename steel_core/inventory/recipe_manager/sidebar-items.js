@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["assemble_for_container","find_recipe","get_remaining_items","slot_changed_crafting_grid"],"type":["CraftingRecipeRef"]};

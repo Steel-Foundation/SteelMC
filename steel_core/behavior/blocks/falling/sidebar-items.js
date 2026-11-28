@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DRAGON_EGG_FALL_DELAY","DRAGON_EGG_MAX_TELEPORTS","DRAGON_EGG_MAX_X","DRAGON_EGG_MAX_Y","DRAGON_EGG_MAX_Z","FALL_DELAY"],"mod":["concrete_powder_block","dragon_egg_block","falling_block","sand_block"],"struct":["ConcretePowderBlock","DragonEggBlock","FallingBlock","SandBlock"]};

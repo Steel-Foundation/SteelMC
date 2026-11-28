@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INVERTED","POWER"],"struct":["DaylightDetectorBlock"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ResourceReloadError"],"fn":["apply_reloads","prepare_reloadable_resources","reset_reloadable_resources"],"mod":["advancements"],"static":["RELOADABLE_RESOURCES"],"struct":["ApplyResourceReloadJob","PreparedReload"],"trait":["PreparedResource","ReloadableResource"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FIREBALL_DAMAGE","FIREBALL_IGNITE_TICKS"],"struct":["SmallFireballEntity"]};

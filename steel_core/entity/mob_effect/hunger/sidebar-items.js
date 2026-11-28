@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EXHAUSTION_PER_LEVEL"],"struct":["HungerBehavior"]};

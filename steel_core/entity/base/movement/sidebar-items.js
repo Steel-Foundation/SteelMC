@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["EntityMovementEmission","EntityVerticalMovementStateUpdate"],"struct":["EntityGroundContact","EntityMovement","EntityMovementFlags","EntityMovementProgress"]};

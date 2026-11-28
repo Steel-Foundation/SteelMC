@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EMPTY_SLOT","INDEX_TABLE_LEN","MAX_PACKED_BYTES","PALETTE_INDEX"],"fn":["invalid_data","pack","pack_global_ids","pack_longs","pack_palette_indices"],"struct":["PaletteIndexTable"]};

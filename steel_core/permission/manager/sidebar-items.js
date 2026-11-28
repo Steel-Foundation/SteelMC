@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PermissionGroupManagerError","PermissionGroupUpdateError"],"struct":["PermissionGroupManager","PermissionGroupManagerState","PermissionGroupStoreError"],"trait":["PermissionGroupStore"]};

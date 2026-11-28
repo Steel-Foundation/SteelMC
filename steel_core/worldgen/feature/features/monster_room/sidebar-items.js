@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MONSTER_ROOM_MOBS","SIMPLE_DUNGEON"]};

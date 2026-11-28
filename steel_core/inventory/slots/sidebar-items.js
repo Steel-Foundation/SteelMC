@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["anvil_slots","armor_slot","crafting_slots","enchantment_slots","furnace_slots","grindstone_slots","normal_slot","restricted_slot","result_handler","result_slot","slot"],"struct":["AnvilResultHandler","GrindstoneResultHandler","RestrictedRules","RestrictedSlot","ResultSlot"],"type":["MayPickup","MayPlace"]};

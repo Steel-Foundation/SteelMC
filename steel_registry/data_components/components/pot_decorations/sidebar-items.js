@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["optional_side","push_hash_entry"],"struct":["PotDecorations"]};

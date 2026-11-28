@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BARREL_SLOTS","SOUND_FACE_OFFSET","SOUND_MIN_PITCH","SOUND_PITCH_VARIATION","SOUND_VOLUME"],"struct":["BarrelBlockEntity"]};

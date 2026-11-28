@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BASE_SCALE"],"struct":["BlendedNoise","SmearedLayer","SmearedStack"]};

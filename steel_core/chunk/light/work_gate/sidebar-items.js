@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LIGHT_WORK_CENTER_EXCLUSION_RADIUS"],"struct":["LightWorkWindowGate","LightWorkWindowReservation"]};

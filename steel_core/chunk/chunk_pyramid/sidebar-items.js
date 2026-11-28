@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GENERATION_PYRAMID","LOADING_PYRAMID","MAX_RADIUS","STATUS_COUNT"],"fn":["const_max","const_max_status","const_min","noop_task"],"macro":[["define_pyramid",1]],"struct":["ChunkDependencies","ChunkPyramid","ChunkStep","ConstPyramidBuilder"],"type":["ChunkStatusTask"]};

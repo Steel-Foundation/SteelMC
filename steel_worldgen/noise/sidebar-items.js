@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["aquifer","beardifier","blended_noise","corner_column_store","end_islands","improved_noise","noise_chunk","normal_noise","ore_veinifier","perlin_noise","perlin_simplex_noise","preliminary_surface_store","simplex_noise"]};

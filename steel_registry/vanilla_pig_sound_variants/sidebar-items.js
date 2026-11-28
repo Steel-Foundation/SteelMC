@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_pig_sound_variants"],"static":["BIG","CLASSIC","MINI"]};

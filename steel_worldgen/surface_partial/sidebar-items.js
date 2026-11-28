@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PartialSurfaceCondition","PartialSurfaceOutcome","PartialSurfaceRule"]};

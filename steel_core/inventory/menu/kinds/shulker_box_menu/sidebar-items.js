@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["shulker_box"],"struct":["ShulkerBoxKind"]};

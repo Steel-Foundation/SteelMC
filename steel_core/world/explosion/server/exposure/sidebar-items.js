@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EXPOSURE_SAMPLE_DENSITY","EXPOSURE_SAMPLE_OFFSET_DIVISOR","MAX_EXPOSURE_CERTIFICATE_AXIS_WORK"],"fn":["exposure_axis_step"],"struct":["EntityExplosionExposure"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["NORMALIZE_EPSILON"],"fn":["cos_sin","normalize","x_rot","y_rot","z_rot"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_GRAVITY","SPLASH_HORIZONTAL_REACH","SPLASH_RANGE_SQ","SPLASH_VERTICAL_REACH"],"fn":["douse_lit_campfire","potion_has_instant_effects"],"trait":["AbstractThrownPotion"]};

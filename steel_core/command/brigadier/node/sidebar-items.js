@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CommandNodeData","CommandRedirectTarget","CommandRequirementKind","NodeKind","RegistrationErrorKind"],"fn":["merge_or_push","redirects_are_compatible"],"struct":["ArgumentData","CommandNode","CommandRedirect","CommandRequirement","NodeId","RegistrationError","UnregisteredCommandNode"],"type":["RequirementPredicate","SyncSuggestionProvider"]};

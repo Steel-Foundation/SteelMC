@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_BLOCK_REGION_WORKSET_SLOTS","SECTION_EDGE_BLOCKS","SECTION_LOCAL_COORDINATE_MASK"],"fn":["inclusive_count","section_local_coordinate"],"struct":["BlockRegionBounds","BlockRegionRead","BlockRegionWorkset","BlockSectionRead"]};

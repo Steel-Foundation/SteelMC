@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["EntityDataSerializerEntry","EntityDataSerializerRegistry"],"type":["EntityDataSerializerEntryRef","EntityDataWriter"]};

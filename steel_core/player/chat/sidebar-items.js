@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MESSAGE_EXPIRES_AFTER_SERVER","SPAM_INCREMENT","TRACKED_MESSAGE_DISCONNECT_THRESHOLD"],"enum":["ChatSessionUpdateOutcome","ChatValidationError","OutgoingChatMessage"],"fn":["validate_chat_session_update"],"mod":["message_chain","message_validator","profile_key","signature_cache"],"struct":["ChatState"]};

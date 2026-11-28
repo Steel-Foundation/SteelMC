@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["carver","context","feature","generator","generators","region","registry","stages","structure","surface","template"],"struct":["EndIslands","OverworldColumnCache"]};

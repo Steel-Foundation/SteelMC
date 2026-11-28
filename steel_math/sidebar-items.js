@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bias_towards_extreme","cube","square"],"mod":["angle","coordinate","float_consts","gradient","interpolation","noise_math","rounding","transformation","trig","vector"]};

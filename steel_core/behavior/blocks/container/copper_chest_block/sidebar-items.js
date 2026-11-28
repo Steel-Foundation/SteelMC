@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["connected_direction","update_shape"],"struct":["CopperChestBlock","WeatheringCopperChestBlock"]};

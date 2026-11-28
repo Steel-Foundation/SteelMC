@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["IMPOSSIBLE_TRIGGER"],"struct":["Criterion","ImpossibleInstance","ImpossibleTrigger"],"trait":["AnyCriterion","CriterionTrigger","CriterionTriggerInstance"]};
