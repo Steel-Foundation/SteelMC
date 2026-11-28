@@ -111,10 +111,11 @@ impl BoneMealItem {
                         }
                         state_to_grow = state;
                     }
-                } else if rng.random_range(0..4) == 0 {
-                    if let Some(plants) = REGISTRY.blocks.get_tag(&BlockTag::UNDERWATER_BONEMEALS) {
-                        state_to_grow = plants[rng.random_range(0..plants.len())].default_state();
-                    }
+                } else if rng.random_range(0..4) == 0
+                    && let Some(plants) = REGISTRY.blocks.get_tag(&BlockTag::UNDERWATER_BONEMEALS)
+                    && !plants.is_empty()
+                {
+                    state_to_grow = plants[rng.random_range(0..plants.len())].default_state();
                 }
             }
 
