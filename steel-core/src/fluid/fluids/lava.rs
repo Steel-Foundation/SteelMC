@@ -17,6 +17,7 @@ use steel_registry::vanilla_game_rules::LAVA_SOURCE_CONVERSION;
 use steel_registry::vanilla_items;
 use steel_utils::BlockPos;
 use steel_utils::BlockStateId;
+use steel_utils::random::Random as _;
 use steel_utils::types::UpdateFlags;
 
 use crate::entity::{Entity, InsideBlockEffectCollector, InsideBlockEffectType};
@@ -130,7 +131,7 @@ impl FluidBehavior for LavaFluid {
             && !old_state.falling
             && !new_state.falling
             && get_height(world, pos, new_state) > get_height(world, pos, old_state)
-            && rand::random_range(0u32..4) != 0
+            && world.random.lock().next_i32_bounded(4) != 0
         {
             base * 4
         } else {

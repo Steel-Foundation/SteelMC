@@ -271,6 +271,7 @@ pub struct World {
     /// Per-world saved data storage.
     pub(crate) saved_data: SavedDataManager,
     pub(crate) random_sequences: SyncRwLock<Option<Arc<RandomSequences>>>,
+    pub(crate) random: SyncMutex<RandomSource>,
     pub(crate) loot_random: SyncMutex<RandomSource>,
     /// Runtime world border state.
     world_border: SyncMutex<WorldBorder>,
@@ -451,6 +452,9 @@ impl World {
                 level_data: SyncRwLock::new(level_data),
                 saved_data,
                 random_sequences: SyncRwLock::new(None),
+                random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
+                    rand::random(),
+                ))),
                 loot_random: SyncMutex::new(RandomSource::Legacy(LegacyRandom::from_seed(
                     rand::random(),
                 ))),
