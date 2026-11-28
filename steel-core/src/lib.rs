@@ -22,6 +22,7 @@ pub mod fluid;
 pub mod inventory;
 pub(crate) mod java_block_pos_set;
 pub mod level_data;
+pub mod maps;
 pub mod nameable;
 pub mod permission;
 pub mod physics;

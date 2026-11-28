@@ -1856,6 +1856,7 @@ impl LivingEntity for Player {
             }
         }
 
+        self.synchronize_special_item_updates();
         if self.disconnect_if_floating_too_long() {
             return;
         }
@@ -1866,6 +1867,7 @@ impl LivingEntity for Player {
         self.tick_living_state();
 
         self.tick_open_menu();
+        self.synchronize_special_item_updates();
         self.flush_inventory_resync();
         self.broadcast_inventory_changes();
         self.update_pose();

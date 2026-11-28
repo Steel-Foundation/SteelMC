@@ -808,6 +808,7 @@ mod animal;
 pub mod attribute;
 mod base;
 mod block_attached_entity;
+pub(crate) use block_attached_entity::BlockAttachedEntity;
 mod block_effects;
 pub(crate) mod blocks_attacks;
 mod callback;
@@ -828,6 +829,7 @@ mod fluid_contact;
 #[rustfmt::skip]
 #[path = "generated/entities.rs"]
 mod generated_entities;
+mod hanging_entity;
 mod identity;
 mod inside_block_effects;
 mod item_based_steering;
@@ -880,6 +882,7 @@ pub use entity::{
     AcceptedClientMovement, AcceptedClientMovementOutcome, Entity, EntityEventSource, RiderMove,
 };
 pub use fluid_contact::EntityFluidContact;
+pub use hanging_entity::HangingEntity;
 pub use identity::EntityGeneration;
 pub use inside_block_effects::{
     InsideBlockEffectCallback, InsideBlockEffectCollector, InsideBlockEffectType,

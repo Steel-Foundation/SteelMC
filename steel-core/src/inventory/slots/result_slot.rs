@@ -54,8 +54,7 @@ impl ResultSlot {
         }
     }
 
-    /// Vanilla also runs `ItemStack.onCraftedBy` here. Its only override is
-    /// `MapItem`, and Steel does not implement maps.
+    /// TODO: Apply `MapItem` post-processing when map crafting is implemented.
     fn check_take_achievements(&self, stack: &ItemStack, player: &Player) {
         let Some(remove_count) = &self.remove_count else {
             return;

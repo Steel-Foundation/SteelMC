@@ -4,6 +4,7 @@
 //! entity tracking range as client chunks, multiplies it by 16, caps it by the
 //! player's view distance, and then checks horizontal squared distance.
 
+use crate::maps::MapItemSavedData;
 use std::sync::Arc;
 
 use glam::DVec3;
@@ -357,6 +358,12 @@ impl EntityTracker {
             }
 
             entity.update_data_before_sync();
+
+            if tracked.server_entity.lock().tick_count() % 10 == 0
+                && let Some(frame) = entity.as_item_frame()
+            {
+                MapItemSavedData::synchronize_frame(frame);
+            }
 
             let passenger_ids = self.direct_tracked_passenger_ids(entity.as_ref());
             {

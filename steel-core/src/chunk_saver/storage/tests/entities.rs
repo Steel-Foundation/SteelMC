@@ -629,17 +629,19 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
 #[test]
 fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     init_globals();
+    assert!(
+        !BLOCK_ENTITIES.has_factory(&vanilla_block_entity_types::DISPENSER),
+        "this test requires a block entity type without a registered factory"
+    );
 
     let pos = ChunkPos::new(0, 0);
     let block_pos = BlockPos::new(4, 4, 6);
     let proto = Chunk::new(single_empty_section(), pos, 0, 16, Weak::new());
-    let banner = REGISTRY
-        .blocks
-        .get_default_state_id(&vanilla_blocks::WHITE_BANNER);
+    let dispenser = vanilla_blocks::DISPENSER.default_state();
     proto.set_block_state_for_generation(
         ChunkStatus::Features,
         block_pos,
-        banner,
+        dispenser,
         UpdateFlags::UPDATE_NONE,
     );
 
@@ -650,10 +652,10 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     components.insert("minecraft:repair_cost", 3_i32);
     nbt.insert("components", components);
     let entity = BLOCK_ENTITIES.create_and_load_owned_or_unimplemented(
-        &vanilla_block_entity_types::BANNER,
+        &vanilla_block_entity_types::DISPENSER,
         proto.level_weak(),
         block_pos,
-        banner,
+        dispenser,
         nbt,
     );
     assert!(proto.set_block_entity(entity));
@@ -682,7 +684,7 @@ fn unimplemented_block_entities_preserve_nbt_through_proto_save_load() {
     let mut saved = NbtCompound::new();
     assert_eq!(
         loaded_entity.get_type().id(),
-        vanilla_block_entity_types::BANNER.id()
+        vanilla_block_entity_types::DISPENSER.id()
     );
     loaded_entity.save_additional(&mut saved);
 
