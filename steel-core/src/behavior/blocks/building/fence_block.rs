@@ -9,6 +9,7 @@ use crate::behavior::blocks::utils::is_excluded_for_connection;
 use crate::behavior::context::BlockPlaceContext;
 use crate::behavior::items::LeadItem;
 use crate::behavior::{InteractionResult, InventoryAccess};
+use crate::entity::ai::path::PathComputationType;
 use crate::player::Player;
 use crate::world::{LevelReader, ScheduledTickAccess, World};
 use steel_macros::block_behavior;
@@ -197,6 +198,14 @@ impl BlockBehavior for FenceBlock {
         _inv: &mut InventoryAccess,
     ) -> InteractionResult {
         LeadItem::bind_player_mobs(player, world, pos)
+    }
+
+    fn is_pathfindable(
+        &self,
+        _state: BlockStateId,
+        _computation_type: PathComputationType,
+    ) -> bool {
+        false
     }
 }
 
