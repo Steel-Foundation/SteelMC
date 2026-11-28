@@ -9,7 +9,6 @@
     clippy::many_single_char_names,
     clippy::match_same_arms,
     clippy::match_wild_err_arm,
-    clippy::nonminimal_bool,
     clippy::redundant_else,
     clippy::ref_option,
     clippy::similar_names,

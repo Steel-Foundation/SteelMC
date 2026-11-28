@@ -1,9 +1,14 @@
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use serde::{Deserialize, de::DeserializeOwned};
+use serde_json::{Map, Value};
+
 use super::{
-    DamageSourcePredicateJson, DamageSourceTagPredicateJson, EnchantmentTargetJson,
-    EntityEffectJson, EntityFlagsPredicateJson, EntityPredicateJson, EntityTargetJson,
-    EntityTypePredicateJson, EntityTypeSpecificPredicateJson, EntityVehiclePredicateJson, GameType,
-    Ident, Identifier, ItemHolderSetJson, LevelBasedValueJson, MobEffectSelectionJson,
-    PlayerPredicateJson, RequirementsJson, Span, TokenStream, quote,
+    DamageSourcePredicateJson, DamageSourceTagPredicateJson, EntityFlagsPredicateJson,
+    EntityPredicateJson, EntityTargetJson, EntityTypePredicateJson,
+    EntityTypeSpecificPredicateJson, EntityVehiclePredicateJson, GameType, Identifier,
+    ItemHolderSetJson, LevelBasedValueJson, MobEffectSelectionJson, PlayerPredicateJson,
+    RequirementsJson,
 };
 
 pub(super) fn slot_to_tokens(slot: &str) -> TokenStream {
@@ -43,616 +48,606 @@ pub(super) fn parse_identifier(raw: &str) -> Result<Identifier, String> {
         .map_err(|error| format!("invalid identifier {raw}: {error}"))
 }
 
-/// Parses a value that must be a `#`-prefixed tag reference (as opposed to the
-/// tag-or-direct-id shapes handled inline elsewhere in this module).
 pub(super) fn parse_required_tag(raw: &str) -> Result<Identifier, String> {
     let tag = raw
         .strip_prefix('#')
-        .ok_or_else(|| format!("expected a tag reference (`#...`), got {raw}"))?;
+        .ok_or_else(|| format!("expected a tag reference (#...), got {raw}"))?;
     parse_identifier(tag)
 }
 
-pub(super) fn object_field<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<&'a serde_json::Value, String> {
-    object
-        .get(field)
-        .ok_or_else(|| format!("missing enchantment requirement field `{field}`"))
+fn decode<T: DeserializeOwned>(value: &Value, description: &str) -> Result<T, String> {
+    serde_json::from_value(value.clone()).map_err(|error| format!("invalid {description}: {error}"))
 }
 
-pub(super) fn string_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<String, String> {
-    object_field(object, field)?
-        .as_str()
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| format!("enchantment requirement field `{field}` must be a string"))
+fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
-pub(super) fn parse_entity_target(raw: &str) -> Result<EntityTargetJson, String> {
-    match raw {
-        "this" => Ok(EntityTargetJson::This),
-        "attacker" => Ok(EntityTargetJson::Attacker),
-        "direct_attacker" => Ok(EntityTargetJson::DirectAttacker),
-        other => Err(format!("unsupported enchantment entity target `{other}`")),
+#[derive(Deserialize)]
+struct TaggedObject {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(flatten)]
+    _fields: Map<String, Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum EntityTargetInput {
+    This,
+    Attacker,
+    DirectAttacker,
+}
+
+impl From<EntityTargetInput> for EntityTargetJson {
+    fn from(value: EntityTargetInput) -> Self {
+        match value {
+            EntityTargetInput::This => Self::This,
+            EntityTargetInput::Attacker => Self::Attacker,
+            EntityTargetInput::DirectAttacker => Self::DirectAttacker,
+        }
     }
 }
 
-pub(super) fn parse_enchantment_target(raw: &str) -> Result<EnchantmentTargetJson, String> {
-    match raw {
-        "attacker" => Ok(EnchantmentTargetJson::Attacker),
-        "damaging_entity" => Ok(EnchantmentTargetJson::DamagingEntity),
-        "victim" => Ok(EnchantmentTargetJson::Victim),
-        other => Err(format!(
-            "unsupported enchantment post-attack target `{other}`"
-        )),
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum GameTypeInput {
+    Survival,
+    Creative,
+    Adventure,
+    Spectator,
+}
+
+impl From<GameTypeInput> for GameType {
+    fn from(value: GameTypeInput) -> Self {
+        match value {
+            GameTypeInput::Survival => Self::Survival,
+            GameTypeInput::Creative => Self::Creative,
+            GameTypeInput::Adventure => Self::Adventure,
+            GameTypeInput::Spectator => Self::Spectator,
+        }
     }
 }
 
-pub(super) fn parse_level_based_value_json(
-    value: &serde_json::Value,
-) -> Result<LevelBasedValueJson, String> {
-    serde_json::from_value(value.to_owned())
-        .map_err(|error| format!("invalid level-based value: {error}"))
+#[derive(Deserialize)]
+struct EntityPredicateInput {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        rename = "type",
+        alias = "minecraft:entity_type"
+    )]
+    entity_type: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        alias = "minecraft:vehicle"
+    )]
+    vehicle: Option<Map<String, Value>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        alias = "minecraft:flags"
+    )]
+    flags: Option<EntityFlagsInput>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    type_specific: Option<Map<String, Value>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_present",
+        rename = "minecraft:type_specific/player"
+    )]
+    player_type_specific: Option<Map<String, Value>>,
+    #[serde(flatten)]
+    unsupported_fields: Map<String, Value>,
 }
 
-pub(super) fn parse_random_chance_value(
-    value: &serde_json::Value,
-) -> Result<LevelBasedValueJson, String> {
-    let Some(object) = value.as_object() else {
-        return parse_level_based_value_json(value);
-    };
-    if object.get("type").and_then(serde_json::Value::as_str) != Some("minecraft:enchantment_level")
-    {
-        return parse_level_based_value_json(value);
-    }
-    parse_level_based_value_json(object_field(object, "amount")?)
+#[derive(Deserialize)]
+struct EntityFlagsInput {
+    #[serde(default, deserialize_with = "deserialize_present")]
+    is_fall_flying: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    is_in_water: Option<bool>,
+    #[serde(flatten)]
+    unsupported_fields: Map<String, Value>,
 }
 
-pub(super) fn parse_mob_effect_selection_json(
-    value: &serde_json::Value,
-) -> Result<MobEffectSelectionJson, String> {
-    let raw = value
-        .as_str()
-        .ok_or_else(|| "mob effect selection must be a string".to_owned())?;
-    let Some(tag) = raw.strip_prefix('#') else {
-        return Ok(MobEffectSelectionJson::Single(parse_identifier(raw)?));
-    };
-
-    Ok(MobEffectSelectionJson::UnsupportedTag(parse_identifier(
-        tag,
-    )?))
+#[derive(Deserialize)]
+struct PlayerPredicateInput {
+    #[serde(default)]
+    gamemode: Vec<GameTypeInput>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    food: Option<PlayerFoodInput>,
+    #[serde(flatten)]
+    unsupported_fields: Map<String, Value>,
 }
 
-pub(super) fn parse_entity_effect_json(
-    value: &serde_json::Value,
-) -> Result<EntityEffectJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("enchantment entity effect must be an object".to_owned());
-    };
-    let effect_type = string_field(object, "type")?;
+#[derive(Deserialize)]
+struct TypedPlayerPredicateInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    #[serde(default)]
+    gamemode: Vec<GameTypeInput>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    food: Option<PlayerFoodInput>,
+    #[serde(flatten)]
+    unsupported_fields: Map<String, Value>,
+}
 
-    match effect_type.as_str() {
-        "minecraft:all_of" => {
-            let effects = object_field(object, "effects")?
-                .as_array()
-                .ok_or_else(|| "all_of entity effect `effects` must be an array".to_owned())?
-                .iter()
-                .map(parse_entity_effect_json)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(EntityEffectJson::AllOf(effects))
-        }
-        "minecraft:change_item_damage" => {
-            for key in object.keys() {
-                if key != "type" && key != "amount" {
-                    return Err(format!(
-                        "unsupported change_item_damage effect field `{key}`"
-                    ));
-                }
-            }
-            Ok(EntityEffectJson::ChangeItemDamage {
-                amount: parse_level_based_value_json(object_field(object, "amount")?)?,
-            })
-        }
-        "minecraft:apply_exhaustion" => {
-            for key in object.keys() {
-                if key != "type" && key != "amount" {
-                    return Err(format!("unsupported apply_exhaustion effect field `{key}`"));
-                }
-            }
-            Ok(EntityEffectJson::ApplyExhaustion {
-                amount: parse_level_based_value_json(object_field(object, "amount")?)?,
-            })
-        }
-        "minecraft:apply_impulse" => {
-            for key in object.keys() {
-                if !matches!(
-                    key.as_str(),
-                    "type" | "direction" | "coordinate_scale" | "magnitude"
-                ) {
-                    return Err(format!("unsupported apply_impulse effect field `{key}`"));
-                }
-            }
-            Ok(EntityEffectJson::ApplyImpulse {
-                direction: parse_vec3_json(object_field(object, "direction")?)?,
-                coordinate_scale: parse_vec3_json(object_field(object, "coordinate_scale")?)?,
-                magnitude: parse_level_based_value_json(object_field(object, "magnitude")?)?,
-            })
-        }
-        "minecraft:damage_entity" => {
-            for key in object.keys() {
-                if !matches!(
-                    key.as_str(),
-                    "type" | "min_damage" | "max_damage" | "damage_type"
-                ) {
-                    return Err(format!("unsupported damage_entity effect field `{key}`"));
-                }
-            }
-            Ok(EntityEffectJson::DamageEntity {
-                min_damage: parse_level_based_value_json(object_field(object, "min_damage")?)?,
-                max_damage: parse_level_based_value_json(object_field(object, "max_damage")?)?,
-                damage_type: parse_identifier(&string_field(object, "damage_type")?)?,
-            })
-        }
-        "minecraft:play_sound" => {
-            for key in object.keys() {
-                if !matches!(key.as_str(), "type" | "sound" | "volume" | "pitch") {
-                    return Err(format!("unsupported play_sound effect field `{key}`"));
-                }
-            }
-            Ok(EntityEffectJson::PlaySound {
-                sounds: parse_sound_list_json(object_field(object, "sound")?)?,
-                volume: parse_f32_field(object, "volume")?,
-                pitch: parse_f32_field(object, "pitch")?,
-            })
-        }
-        "minecraft:ignite" => {
-            for key in object.keys() {
-                if key != "type" && key != "duration" {
-                    return Err(format!("unsupported ignite effect field `{key}`"));
-                }
-            }
-            Ok(EntityEffectJson::Ignite {
-                duration: parse_level_based_value_json(object_field(object, "duration")?)?,
-            })
-        }
-        "minecraft:apply_mob_effect" => {
-            for key in object.keys() {
-                if !matches!(
-                    key.as_str(),
-                    "type"
-                        | "to_apply"
-                        | "min_duration"
-                        | "max_duration"
-                        | "min_amplifier"
-                        | "max_amplifier"
-                ) {
-                    return Err(format!("unsupported apply_mob_effect field `{key}`"));
-                }
-            }
-            Ok(EntityEffectJson::ApplyMobEffect {
-                to_apply: parse_mob_effect_selection_json(object_field(object, "to_apply")?)?,
-                min_duration: parse_level_based_value_json(object_field(object, "min_duration")?)?,
-                max_duration: parse_level_based_value_json(object_field(object, "max_duration")?)?,
-                min_amplifier: parse_level_based_value_json(object_field(
-                    object,
-                    "min_amplifier",
-                )?)?,
-                max_amplifier: parse_level_based_value_json(object_field(
-                    object,
-                    "max_amplifier",
-                )?)?,
-            })
-        }
-        _ => Ok(EntityEffectJson::Unsupported {
-            effect_type: parse_identifier(&effect_type)?,
-        }),
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlayerFoodInput {
+    level: PlayerFoodLevelInput,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlayerFoodLevelInput {
+    min: i32,
+}
+
+fn player_predicate(
+    game_modes: Vec<GameTypeInput>,
+    food: Option<PlayerFoodInput>,
+    unsupported: bool,
+) -> PlayerPredicateJson {
+    PlayerPredicateJson {
+        game_modes: game_modes.into_iter().map(GameType::from).collect(),
+        food_level_min: food.map(|food| food.level.min),
+        unsupported,
     }
 }
 
-pub(super) fn parse_vec3_json(value: &serde_json::Value) -> Result<[f64; 3], String> {
-    let Some(values) = value.as_array() else {
-        return Err("vec3 must be an array".to_owned());
-    };
-    let [x, y, z] = values.as_slice() else {
-        return Err("vec3 must have exactly three values".to_owned());
-    };
+pub(super) fn parse_entity_predicate_json(value: &Value) -> Result<EntityPredicateJson, String> {
+    let input: EntityPredicateInput = decode(value, "entity_properties predicate")?;
 
-    Ok([
-        x.as_f64()
-            .ok_or_else(|| "vec3 x must be a number".to_owned())?,
-        y.as_f64()
-            .ok_or_else(|| "vec3 y must be a number".to_owned())?,
-        z.as_f64()
-            .ok_or_else(|| "vec3 z must be a number".to_owned())?,
-    ])
-}
-
-pub(super) fn parse_sound_list_json(value: &serde_json::Value) -> Result<Vec<Identifier>, String> {
-    match value {
-        serde_json::Value::String(raw) => Ok(vec![parse_identifier(raw)?]),
-        serde_json::Value::Array(values) => values
-            .iter()
-            .map(|value| {
-                value
-                    .as_str()
-                    .ok_or_else(|| "sound list entries must be strings".to_owned())
-                    .and_then(parse_identifier)
-            })
-            .collect(),
-        _ => Err("play_sound `sound` must be a string or string array".to_owned()),
-    }
-}
-
-pub(super) fn parse_f32_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<f32, String> {
-    let value = object_field(object, field)?;
-    let number = value
-        .as_f64()
-        .ok_or_else(|| format!("`{field}` must be a number"))?;
-    Ok(number as f32)
-}
-
-pub(super) fn parse_entity_type_predicate(raw: &str) -> Result<EntityTypePredicateJson, String> {
-    let Some(tag) = raw.strip_prefix('#') else {
-        return Ok(EntityTypePredicateJson::Type(parse_identifier(raw)?));
-    };
-
-    Ok(EntityTypePredicateJson::Tag(parse_identifier(tag)?))
-}
-
-pub(super) fn parse_entity_predicate_json(
-    value: &serde_json::Value,
-) -> Result<EntityPredicateJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("entity_properties predicate must be an object".to_owned());
-    };
-    let unsupported = object.keys().any(|key| {
-        !matches!(
-            key.as_str(),
-            "type"
-                | "minecraft:entity_type"
-                | "vehicle"
-                | "minecraft:vehicle"
-                | "flags"
-                | "minecraft:flags"
-                | "type_specific"
-                | "minecraft:type_specific/player"
-        )
-    });
-    let entity_type = match aliased_object_field(object, &["type", "minecraft:entity_type"])? {
-        Some(serde_json::Value::String(raw)) => parse_entity_type_predicate(raw)?,
-        Some(_) => return Err("entity_properties predicate `type` must be a string".to_owned()),
-        None => EntityTypePredicateJson::Any,
-    };
-    let vehicle = match aliased_object_field(object, &["vehicle", "minecraft:vehicle"])? {
-        Some(serde_json::Value::Object(vehicle)) if vehicle.is_empty() => {
-            EntityVehiclePredicateJson::Present
-        }
-        Some(serde_json::Value::Object(_)) => EntityVehiclePredicateJson::Unsupported,
-        Some(_) => return Err("entity_properties predicate `vehicle` must be an object".to_owned()),
-        None => EntityVehiclePredicateJson::Any,
-    };
-    let flags = aliased_object_field(object, &["flags", "minecraft:flags"])?
-        .map(parse_entity_flags_predicate_json)
+    let entity_type = input
+        .entity_type
+        .as_deref()
+        .map(parse_entity_type_predicate)
         .transpose()?
-        .unwrap_or_else(EntityFlagsPredicateJson::any);
-    let type_specific =
-        match aliased_object_field(object, &["type_specific", "minecraft:type_specific/player"])? {
-            Some(value) if object.contains_key("minecraft:type_specific/player") => {
-                EntityTypeSpecificPredicateJson::Player(parse_player_predicate_json(value, false)?)
+        .unwrap_or(EntityTypePredicateJson::Any);
+
+    let vehicle = input
+        .vehicle
+        .map_or(EntityVehiclePredicateJson::Any, |vehicle| {
+            if vehicle.is_empty() {
+                EntityVehiclePredicateJson::Present
+            } else {
+                EntityVehiclePredicateJson::Unsupported
             }
-            Some(value) => parse_type_specific_predicate_json(value)?,
-            None => EntityTypeSpecificPredicateJson::Any,
-        };
+        });
+
+    let flags = input
+        .flags
+        .map_or_else(EntityFlagsPredicateJson::any, |flags| {
+            EntityFlagsPredicateJson {
+                is_fall_flying: flags.is_fall_flying,
+                is_in_water: flags.is_in_water,
+                unsupported: !flags.unsupported_fields.is_empty(),
+            }
+        });
+
+    let type_specific = match (input.type_specific, input.player_type_specific) {
+        (Some(_), Some(_)) => {
+            return Err(
+                "entity_properties predicate must not contain both type_specific and minecraft:type_specific/player"
+                    .to_owned(),
+            );
+        }
+        (Some(value), None) => parse_type_specific_predicate_json(&Value::Object(value))?,
+        (None, Some(value)) => {
+            let player: PlayerPredicateInput = decode(&Value::Object(value), "player predicate")?;
+            EntityTypeSpecificPredicateJson::Player(player_predicate(
+                player.gamemode,
+                player.food,
+                !player.unsupported_fields.is_empty(),
+            ))
+        }
+        (None, None) => EntityTypeSpecificPredicateJson::Any,
+    };
 
     Ok(EntityPredicateJson {
         entity_type,
         vehicle,
         flags,
         type_specific,
-        unsupported,
+        unsupported: !input.unsupported_fields.is_empty(),
     })
 }
 
-pub(super) fn aliased_object_field<'a>(
-    object: &'a serde_json::Map<String, serde_json::Value>,
-    fields: &[&str],
-) -> Result<Option<&'a serde_json::Value>, String> {
-    let mut found: Option<(&str, &serde_json::Value)> = None;
-    for field in fields {
-        if let Some(value) = object.get(*field) {
-            if let Some(previous) = found {
-                let previous_field = previous.0;
-                return Err(format!(
-                    "entity_properties predicate must not contain both `{previous_field}` and `{field}`"
-                ));
-            }
-            found = Some((*field, value));
-        }
+fn parse_entity_type_predicate(raw: &str) -> Result<EntityTypePredicateJson, String> {
+    if let Some(tag) = raw.strip_prefix('#') {
+        return Ok(EntityTypePredicateJson::Tag(parse_identifier(tag)?));
     }
-
-    Ok(found.map(|(_, value)| value))
+    Ok(EntityTypePredicateJson::Type(parse_identifier(raw)?))
 }
 
-pub(super) fn parse_entity_flags_predicate_json(
-    value: &serde_json::Value,
-) -> Result<EntityFlagsPredicateJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("entity flags predicate must be an object".to_owned());
-    };
-    let unsupported = object
-        .keys()
-        .any(|key| key != "is_fall_flying" && key != "is_in_water");
-    let is_fall_flying = optional_bool_field(object, "is_fall_flying")?;
-    let is_in_water = optional_bool_field(object, "is_in_water")?;
-
-    Ok(EntityFlagsPredicateJson {
-        is_fall_flying,
-        is_in_water,
-        unsupported,
-    })
-}
-
-pub(super) fn parse_type_specific_predicate_json(
-    value: &serde_json::Value,
+fn parse_type_specific_predicate_json(
+    value: &Value,
 ) -> Result<EntityTypeSpecificPredicateJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("entity type_specific predicate must be an object".to_owned());
-    };
-    let predicate_type = string_field(object, "type")?;
-    if predicate_type != "minecraft:player" {
+    let tagged: TaggedObject = decode(value, "entity type_specific predicate")?;
+    if tagged.kind != "minecraft:player" {
         return Ok(EntityTypeSpecificPredicateJson::Unsupported);
     }
 
-    Ok(EntityTypeSpecificPredicateJson::Player(
-        parse_player_predicate_json(value, true)?,
-    ))
+    let player: TypedPlayerPredicateInput = decode(value, "player predicate")?;
+    Ok(EntityTypeSpecificPredicateJson::Player(player_predicate(
+        player.gamemode,
+        player.food,
+        !player.unsupported_fields.is_empty(),
+    )))
 }
 
-pub(super) fn parse_player_predicate_json(
-    value: &serde_json::Value,
-    allow_type_field: bool,
-) -> Result<PlayerPredicateJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("player predicate must be an object".to_owned());
-    };
-    let unsupported = object.keys().any(|key| {
-        !matches!(key.as_str(), "gamemode" | "food") && !(allow_type_field && key == "type")
-    });
-    let game_modes = match object.get("gamemode") {
-        Some(serde_json::Value::Array(modes)) => modes
-            .iter()
-            .map(|mode| {
-                mode.as_str()
-                    .ok_or_else(|| "player gamemode entries must be strings".to_owned())
-                    .and_then(parse_game_type)
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        Some(_) => return Err("player predicate `gamemode` must be an array".to_owned()),
-        None => Vec::new(),
-    };
-    let food_level_min = object
-        .get("food")
-        .map(parse_player_food_min_json)
-        .transpose()?;
-
-    Ok(PlayerPredicateJson {
-        game_modes,
-        food_level_min,
-        unsupported,
-    })
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DamageSourcePredicateInput {
+    #[serde(default)]
+    tags: Vec<DamageSourceTagPredicateInput>,
+    #[serde(default, deserialize_with = "deserialize_present")]
+    is_direct: Option<bool>,
 }
 
-pub(super) fn parse_player_food_min_json(value: &serde_json::Value) -> Result<i32, String> {
-    let Some(object) = value.as_object() else {
-        return Err("player food predicate must be an object".to_owned());
-    };
-    let level = object_field(object, "level")?;
-    let Some(level_object) = level.as_object() else {
-        return Err("player food `level` must be an object".to_owned());
-    };
-    for key in object.keys() {
-        if key != "level" {
-            return Err(format!("unsupported player food predicate field `{key}`"));
-        }
-    }
-    for key in level_object.keys() {
-        if key != "min" {
-            return Err(format!("unsupported player food level field `{key}`"));
-        }
-    }
-    let min = object_field(level_object, "min")?
-        .as_i64()
-        .ok_or_else(|| "player food level `min` must be an integer".to_owned())?;
-    i32::try_from(min).map_err(|_| "player food level `min` out of range".to_owned())
-}
-
-pub(super) fn optional_bool_field(
-    object: &serde_json::Map<String, serde_json::Value>,
-    field: &str,
-) -> Result<Option<bool>, String> {
-    match object.get(field) {
-        Some(serde_json::Value::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(format!("`{field}` must be a bool")),
-        None => Ok(None),
-    }
-}
-
-pub(super) fn parse_game_type(value: &str) -> Result<GameType, String> {
-    match value {
-        "survival" => Ok(GameType::Survival),
-        "creative" => Ok(GameType::Creative),
-        "adventure" => Ok(GameType::Adventure),
-        "spectator" => Ok(GameType::Spectator),
-        other => Err(format!("unknown game type `{other}`")),
-    }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DamageSourceTagPredicateInput {
+    id: String,
+    expected: bool,
 }
 
 pub(super) fn parse_damage_source_predicate_json(
-    value: &serde_json::Value,
+    value: &Value,
 ) -> Result<DamageSourcePredicateJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("damage_source_properties predicate must be an object".to_owned());
-    };
-    for key in object.keys() {
-        if key != "tags" && key != "is_direct" {
-            return Err(format!(
-                "unsupported damage_source_properties predicate field `{key}`"
-            ));
-        }
-    }
-    let tags = match object.get("tags") {
-        Some(serde_json::Value::Array(tags)) => tags
-            .iter()
-            .map(parse_damage_source_tag_predicate_json)
-            .collect::<Result<Vec<_>, _>>()?,
-        Some(_) => {
-            return Err("damage_source_properties predicate `tags` must be an array".to_owned());
-        }
-        None => Vec::new(),
-    };
-    let is_direct = match object.get("is_direct") {
-        Some(serde_json::Value::Bool(is_direct)) => Some(*is_direct),
-        Some(_) => {
-            return Err("damage_source_properties predicate `is_direct` must be a bool".to_owned());
-        }
-        None => None,
-    };
+    let input: DamageSourcePredicateInput = decode(value, "damage_source_properties predicate")?;
+    let tags = input
+        .tags
+        .into_iter()
+        .map(|tag| {
+            Ok(DamageSourceTagPredicateJson {
+                tag: parse_required_tag(&tag.id)?,
+                expected: tag.expected,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
 
-    Ok(DamageSourcePredicateJson { tags, is_direct })
-}
-
-pub(super) fn parse_damage_source_tag_predicate_json(
-    value: &serde_json::Value,
-) -> Result<DamageSourceTagPredicateJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("damage source tag predicate must be an object".to_owned());
-    };
-    let id = string_field(object, "id")?;
-    let expected = object_field(object, "expected")?
-        .as_bool()
-        .ok_or_else(|| "damage source tag predicate `expected` must be a bool".to_owned())?;
-    for key in object.keys() {
-        if key != "id" && key != "expected" {
-            return Err(format!("unsupported damage source tag field `{key}`"));
-        }
-    }
-
-    // `tags` entries are always a damage-type tag reference (`DamageTypeTags`), written with
-    // the vanilla `#` sigil like any other tag id.
-    Ok(DamageSourceTagPredicateJson {
-        tag: parse_required_tag(&id)?,
-        expected,
+    Ok(DamageSourcePredicateJson {
+        tags,
+        is_direct: input.is_direct,
     })
 }
 
-pub(super) fn parse_requirements_json(
-    value: &serde_json::Value,
-) -> Result<RequirementsJson, String> {
-    let Some(object) = value.as_object() else {
-        return Err("enchantment effect requirements must be an object".to_owned());
-    };
-    let condition = string_field(object, "type")?;
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ItemHolderSetInput {
+    Single(String),
+    Direct(Vec<String>),
+}
 
-    match condition.as_str() {
-        "minecraft:all_of" => {
-            let terms = object_field(object, "terms")?
-                .as_array()
-                .ok_or_else(|| "all_of requirements `terms` must be an array".to_owned())?
-                .iter()
-                .map(parse_requirements_json)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(RequirementsJson::AllOf(terms))
-        }
-        "minecraft:any_of" => {
-            let terms = object_field(object, "terms")?
-                .as_array()
-                .ok_or_else(|| "any_of requirements `terms` must be an array".to_owned())?
-                .iter()
-                .map(parse_requirements_json)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(RequirementsJson::AnyOf(terms))
-        }
-        "minecraft:inverted" => {
-            let term = parse_requirements_json(object_field(object, "term")?)?;
-            Ok(RequirementsJson::Inverted(Box::new(term)))
-        }
-        "minecraft:entity_properties" => {
-            let entity = parse_entity_target(&string_field(object, "entity")?)?;
-            let predicate = parse_entity_predicate_json(object_field(object, "predicate")?)?;
-            Ok(RequirementsJson::EntityProperties { entity, predicate })
-        }
-        "minecraft:damage_source_properties" => {
-            let predicate = parse_damage_source_predicate_json(object_field(object, "predicate")?)?;
-            Ok(RequirementsJson::DamageSourceProperties(predicate))
-        }
-        "minecraft:random_chance" => {
-            for key in object.keys() {
-                if key != "type" && key != "chance" {
-                    return Err(format!(
-                        "unsupported random_chance requirement field `{key}`"
-                    ));
-                }
+fn convert_item_holder_set(input: ItemHolderSetInput) -> Result<ItemHolderSetJson, String> {
+    match input {
+        ItemHolderSetInput::Single(raw) => {
+            if let Some(tag) = raw.strip_prefix('#') {
+                Ok(ItemHolderSetJson::Tag(parse_identifier(tag)?))
+            } else {
+                Ok(ItemHolderSetJson::Direct(vec![parse_identifier(&raw)?]))
             }
-            Ok(RequirementsJson::RandomChance {
-                chance: parse_random_chance_value(object_field(object, "chance")?)?,
+        }
+        ItemHolderSetInput::Direct(items) => {
+            let items = items
+                .into_iter()
+                .map(|item| {
+                    if item.starts_with('#') {
+                        return Err("match_tool direct item lists cannot contain tags".to_owned());
+                    }
+                    parse_identifier(&item)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(ItemHolderSetJson::Direct(items))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SoundListInput {
+    Single(Identifier),
+    Multiple(Vec<Identifier>),
+}
+
+fn parse_sound_list_json(value: SoundListInput) -> Vec<Identifier> {
+    match value {
+        SoundListInput::Single(sound) => vec![sound],
+        SoundListInput::Multiple(sounds) => sounds,
+    }
+}
+
+#[derive(Deserialize)]
+enum EnchantmentLevelType {
+    #[serde(rename = "minecraft:enchantment_level")]
+    EnchantmentLevel,
+}
+
+#[derive(Deserialize)]
+struct EnchantmentLevelValueInput {
+    #[serde(rename = "type")]
+    _kind: EnchantmentLevelType,
+    amount: LevelBasedValueJson,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RandomChanceValueInput {
+    EnchantmentLevel(EnchantmentLevelValueInput),
+    Value(LevelBasedValueJson),
+}
+
+fn parse_random_chance_value(value: &Value) -> Result<LevelBasedValueJson, String> {
+    match decode(value, "random_chance value")? {
+        RandomChanceValueInput::EnchantmentLevel(input) => Ok(input.amount),
+        RandomChanceValueInput::Value(value) => Ok(value),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AllOfEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    effects: Vec<super::EntityEffectJson>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChangeItemDamageEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    amount: LevelBasedValueJson,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplyExhaustionEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    amount: LevelBasedValueJson,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplyImpulseEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    direction: [f64; 3],
+    coordinate_scale: [f64; 3],
+    magnitude: LevelBasedValueJson,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DamageEntityEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    min_damage: LevelBasedValueJson,
+    max_damage: LevelBasedValueJson,
+    damage_type: Identifier,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaySoundEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    sound: SoundListInput,
+    volume: f32,
+    pitch: f32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IgniteEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    duration: LevelBasedValueJson,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ApplyMobEffectInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    to_apply: String,
+    min_duration: LevelBasedValueJson,
+    max_duration: LevelBasedValueJson,
+    min_amplifier: LevelBasedValueJson,
+    max_amplifier: LevelBasedValueJson,
+}
+
+fn parse_mob_effect_selection(raw: &str) -> Result<MobEffectSelectionJson, String> {
+    if let Some(tag) = raw.strip_prefix('#') {
+        return Ok(MobEffectSelectionJson::UnsupportedTag(parse_identifier(
+            tag,
+        )?));
+    }
+    Ok(MobEffectSelectionJson::Single(parse_identifier(raw)?))
+}
+
+pub(super) fn parse_entity_effect_json(value: &Value) -> Result<super::EntityEffectJson, String> {
+    use super::EntityEffectJson;
+
+    let tagged: TaggedObject = decode(value, "enchantment entity effect")?;
+    match tagged.kind.as_str() {
+        "minecraft:all_of" => {
+            let input: AllOfEffectInput = decode(value, "all_of entity effect")?;
+            Ok(EntityEffectJson::AllOf(input.effects))
+        }
+        "minecraft:change_item_damage" => {
+            let input: ChangeItemDamageEffectInput = decode(value, "change_item_damage effect")?;
+            Ok(EntityEffectJson::ChangeItemDamage {
+                amount: input.amount,
             })
         }
-        "minecraft:match_tool" => {
-            for key in object.keys() {
-                if key != "type" && key != "predicate" {
-                    return Err(format!("unsupported match_tool requirement field `{key}`"));
-                }
-            }
-            let predicate = object_field(object, "predicate")?
-                .as_object()
-                .ok_or_else(|| "match_tool `predicate` must be an object".to_owned())?;
-            for key in predicate.keys() {
-                if key != "items" {
-                    return Err(format!("unsupported match_tool predicate field `{key}`"));
-                }
-            }
-            let items = predicate
-                .get("items")
-                .map(parse_item_holder_set_json)
-                .transpose()?;
-            Ok(RequirementsJson::MatchTool { items })
+        "minecraft:apply_exhaustion" => {
+            let input: ApplyExhaustionEffectInput = decode(value, "apply_exhaustion effect")?;
+            Ok(EntityEffectJson::ApplyExhaustion {
+                amount: input.amount,
+            })
         }
-        _ => Ok(RequirementsJson::Unsupported {
-            condition: parse_identifier(&condition)?,
+        "minecraft:apply_impulse" => {
+            let input: ApplyImpulseEffectInput = decode(value, "apply_impulse effect")?;
+            Ok(EntityEffectJson::ApplyImpulse {
+                direction: input.direction,
+                coordinate_scale: input.coordinate_scale,
+                magnitude: input.magnitude,
+            })
+        }
+        "minecraft:damage_entity" => {
+            let input: DamageEntityEffectInput = decode(value, "damage_entity effect")?;
+            Ok(EntityEffectJson::DamageEntity {
+                min_damage: input.min_damage,
+                max_damage: input.max_damage,
+                damage_type: input.damage_type,
+            })
+        }
+        "minecraft:play_sound" => {
+            let input: PlaySoundEffectInput = decode(value, "play_sound effect")?;
+            Ok(EntityEffectJson::PlaySound {
+                sounds: parse_sound_list_json(input.sound),
+                volume: input.volume,
+                pitch: input.pitch,
+            })
+        }
+        "minecraft:ignite" => {
+            let input: IgniteEffectInput = decode(value, "ignite effect")?;
+            Ok(EntityEffectJson::Ignite {
+                duration: input.duration,
+            })
+        }
+        "minecraft:apply_mob_effect" => {
+            let input: ApplyMobEffectInput = decode(value, "apply_mob_effect effect")?;
+            Ok(EntityEffectJson::ApplyMobEffect {
+                to_apply: parse_mob_effect_selection(&input.to_apply)?,
+                min_duration: input.min_duration,
+                max_duration: input.max_duration,
+                min_amplifier: input.min_amplifier,
+                max_amplifier: input.max_amplifier,
+            })
+        }
+        _ => Ok(EntityEffectJson::Unsupported {
+            effect_type: parse_identifier(&tagged.kind)?,
         }),
     }
 }
 
-pub(super) fn parse_item_holder_set_json(
-    value: &serde_json::Value,
-) -> Result<ItemHolderSetJson, String> {
-    if let Some(value) = value.as_str() {
-        if let Some(tag) = value.strip_prefix('#') {
-            return Ok(ItemHolderSetJson::Tag(parse_identifier(tag)?));
-        }
-        return Ok(ItemHolderSetJson::Direct(vec![parse_identifier(value)?]));
-    }
+#[derive(Deserialize)]
+struct AllOfRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    terms: Vec<RequirementsJson>,
+}
 
-    let values = value
-        .as_array()
-        .ok_or_else(|| "match_tool `items` must be an item, item tag, or item list".to_owned())?;
-    let items = values
-        .iter()
-        .map(|value| {
-            let value = value
-                .as_str()
-                .ok_or_else(|| "match_tool item list entries must be strings".to_owned())?;
-            if value.starts_with('#') {
-                return Err("match_tool direct item lists cannot contain tags".to_owned());
-            }
-            parse_identifier(value)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ItemHolderSetJson::Direct(items))
+#[derive(Deserialize)]
+struct AnyOfRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    terms: Vec<RequirementsJson>,
+}
+
+#[derive(Deserialize)]
+struct InvertedRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    term: Box<RequirementsJson>,
+}
+
+#[derive(Deserialize)]
+struct EntityPropertiesRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    entity: EntityTargetInput,
+    predicate: Value,
+}
+
+#[derive(Deserialize)]
+struct DamageSourcePropertiesRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    predicate: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RandomChanceRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    chance: Value,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MatchToolRequirementsInput {
+    #[serde(rename = "type")]
+    _kind: String,
+    predicate: MatchToolPredicateInput,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MatchToolPredicateInput {
+    #[serde(default, deserialize_with = "deserialize_present")]
+    items: Option<ItemHolderSetInput>,
+}
+
+pub(super) fn parse_requirements_json(value: &Value) -> Result<RequirementsJson, String> {
+    let tagged: TaggedObject = decode(value, "enchantment effect requirements")?;
+    match tagged.kind.as_str() {
+        "minecraft:all_of" => {
+            let input: AllOfRequirementsInput = decode(value, "all_of requirements")?;
+            Ok(RequirementsJson::AllOf(input.terms))
+        }
+        "minecraft:any_of" => {
+            let input: AnyOfRequirementsInput = decode(value, "any_of requirements")?;
+            Ok(RequirementsJson::AnyOf(input.terms))
+        }
+        "minecraft:inverted" => {
+            let input: InvertedRequirementsInput = decode(value, "inverted requirements")?;
+            Ok(RequirementsJson::Inverted(input.term))
+        }
+        "minecraft:entity_properties" => {
+            let input: EntityPropertiesRequirementsInput =
+                decode(value, "entity_properties requirement")?;
+            Ok(RequirementsJson::EntityProperties {
+                entity: input.entity.into(),
+                predicate: parse_entity_predicate_json(&input.predicate)?,
+            })
+        }
+        "minecraft:damage_source_properties" => {
+            let input: DamageSourcePropertiesRequirementsInput =
+                decode(value, "damage_source_properties requirement")?;
+            Ok(RequirementsJson::DamageSourceProperties(
+                parse_damage_source_predicate_json(&input.predicate)?,
+            ))
+        }
+        "minecraft:random_chance" => {
+            let input: RandomChanceRequirementsInput = decode(value, "random_chance requirement")?;
+            Ok(RequirementsJson::RandomChance {
+                chance: parse_random_chance_value(&input.chance)?,
+            })
+        }
+        "minecraft:match_tool" => {
+            let input: MatchToolRequirementsInput = decode(value, "match_tool requirement")?;
+            let items = input
+                .predicate
+                .items
+                .map(convert_item_holder_set)
+                .transpose()?;
+            Ok(RequirementsJson::MatchTool { items })
+        }
+        _ => Ok(RequirementsJson::Unsupported {
+            condition: parse_identifier(&tagged.kind)?,
+        }),
+    }
 }

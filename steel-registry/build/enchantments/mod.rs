@@ -22,8 +22,8 @@ use effects::{
 use generation::generate_enchantment_effects;
 use nbt::{NbtValueHint, generate_nbt_compound};
 use parsing::{
-    damage_type_ref_token, identifier_token, parse_enchantment_target, parse_entity_effect_json,
-    parse_requirements_json, slot_to_tokens,
+    damage_type_ref_token, identifier_token, parse_entity_effect_json, parse_requirements_json,
+    slot_to_tokens,
 };
 
 #[derive(Deserialize, Debug)]
@@ -127,56 +127,26 @@ struct ConditionalEntityEffectJson {
     requirements: Option<RequirementsJson>,
 }
 
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
 struct ConditionalDamageImmunityEffectJson {
+    #[serde(rename = "effect")]
+    _effect: EmptyEffectJson,
+    #[serde(default, deserialize_with = "deserialize_present")]
     requirements: Option<RequirementsJson>,
 }
 
-impl<'de> Deserialize<'de> for ConditionalDamageImmunityEffectJson {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        let Some(object) = value.as_object() else {
-            return Err(de::Error::custom(
-                "damage_immunity effect entry must be an object",
-            ));
-        };
-
-        for key in object.keys() {
-            if key != "effect" && key != "requirements" {
-                return Err(de::Error::custom(format!(
-                    "unsupported damage_immunity field `{key}`"
-                )));
-            }
-        }
-
-        let Some(effect) = object.get("effect") else {
-            return Err(de::Error::custom(
-                "damage_immunity effect entry missing `effect`",
-            ));
-        };
-        let Some(effect_object) = effect.as_object() else {
-            return Err(de::Error::custom(
-                "damage_immunity `effect` must be an object",
-            ));
-        };
-        if !effect_object.is_empty() {
-            return Err(de::Error::custom(
-                "damage_immunity `effect` must be an empty object",
-            ));
-        }
-
-        let requirements = object
-            .get("requirements")
-            .map(parse_requirements_json)
-            .transpose()
-            .map_err(de::Error::custom)?;
-
-        Ok(Self { requirements })
-    }
+fn deserialize_present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+struct EmptyEffectJson {}
 
 #[derive(Deserialize, Debug)]
 struct TargetedConditionalEntityEffectJson {
@@ -195,21 +165,12 @@ struct TargetedConditionalValueEffectJson {
     requirements: Option<RequirementsJson>,
 }
 
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
 enum EnchantmentTargetJson {
     Attacker,
     DamagingEntity,
     Victim,
-}
-
-impl<'de> Deserialize<'de> for EnchantmentTargetJson {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let raw = String::deserialize(deserializer)?;
-        parse_enchantment_target(&raw).map_err(de::Error::custom)
-    }
 }
 
 #[derive(Debug)]
