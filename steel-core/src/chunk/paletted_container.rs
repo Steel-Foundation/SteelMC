@@ -214,6 +214,15 @@ impl<V: Hash + Eq + Copy + Default + Debug, const DIM: usize> PalettedContainer<
         }
     }
 
+    /// Every value in [`Self::get_at_index`] order, or `None` for a homogeneous container.
+    pub(crate) fn flat_values(&self) -> Option<&[V]> {
+        match self {
+            Self::Homogeneous(_) => None,
+            Self::Heterogeneous(data) => Some(data.values()),
+            Self::Building(cube) => Some(cube.as_flattened().as_flattened()),
+        }
+    }
+
     /// Copies the full vertical column at `(x, z)` into `out`.
     pub(crate) fn copy_column_into(&self, x: usize, z: usize, out: &mut [V]) {
         debug_assert!(x < DIM);

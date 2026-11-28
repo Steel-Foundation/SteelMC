@@ -91,6 +91,7 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
     let named_fns = ctx.gen_named_functions(input);
     let column_cache = ctx.gen_column_cache(input);
     let router_fns = ctx.gen_router_functions(input);
+    let fill_fns = ctx.gen_fill_functions(input);
 
     // Imports are emitted here so each dimension's output is self-contained
     // when wrapped in a module by the caller.
@@ -114,5 +115,6 @@ pub fn transpile(input: &TranspilerInput) -> TokenStream {
         #column_cache
         #named_fns
         #router_fns
+        #fill_fns
     }
 }
