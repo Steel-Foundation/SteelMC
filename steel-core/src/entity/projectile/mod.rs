@@ -20,7 +20,6 @@ mod wind_charge;
 #[cfg(test)]
 mod owner_tests;
 
-use std::mem;
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
@@ -35,7 +34,6 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_type_tags::EntityTypeTag;
 use steel_registry::vanilla_game_rules::{MOB_GRIEFING, PROJECTILES_CAN_BREAK_BLOCKS};
 use steel_registry::{REGISTRY, TaggedRegistryExt as _, vanilla_game_events};
-use steel_utils::axis::Axis;
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use steel_utils::types::GameType;
@@ -889,9 +887,15 @@ fn get_entity_hit_result(
             continue;
         }
         let target_box = entity.bounding_box().inflate(margin);
-        let Some(location) = clip_segment(target_box, from, to) else {
+        let Some((scale, _)) = World::intersects_aabb_with_t(
+            from,
+            to,
+            target_box.min_corner(),
+            target_box.max_corner(),
+        ) else {
             continue;
         };
+        let location = from + (to - from) * scale;
         let dist_sq = from.distance_squared(location);
         if dist_sq < nearest_dist_sq {
             nearest_dist_sq = dist_sq;
@@ -900,55 +904,6 @@ fn get_entity_hit_result(
     }
 
     nearest
-}
-
-/// Clips the segment `from -> to` against `aabb`, returning the entry point.
-///
-/// Returns `from` when the segment starts inside the box and `None` when it never
-/// intersects. Mirrors vanilla `AABB.clip` using the slab method.
-fn clip_segment(aabb: WorldAabb, from: DVec3, to: DVec3) -> Option<DVec3> {
-    const EPSILON: f64 = 1.0e-7;
-
-    let direction = to - from;
-    let mut t_min = 0.0_f64;
-    let mut t_max = 1.0_f64;
-
-    for axis in [Axis::X, Axis::Y, Axis::Z] {
-        let start = axis_component(from, axis);
-        let delta = axis_component(direction, axis);
-        let axis_min = aabb.min(axis);
-        let axis_max = aabb.max(axis);
-
-        if delta.abs() < EPSILON {
-            if start < axis_min || start > axis_max {
-                return None;
-            }
-            continue;
-        }
-
-        let inv_delta = 1.0 / delta;
-        let mut low = (axis_min - start) * inv_delta;
-        let mut high = (axis_max - start) * inv_delta;
-        if low > high {
-            mem::swap(&mut low, &mut high);
-        }
-
-        t_min = t_min.max(low);
-        t_max = t_max.min(high);
-        if t_min > t_max {
-            return None;
-        }
-    }
-
-    Some(from + direction * t_min)
-}
-
-const fn axis_component(vec: DVec3, axis: Axis) -> f64 {
-    match axis {
-        Axis::X => vec.x,
-        Axis::Y => vec.y,
-        Axis::Z => vec.z,
-    }
 }
 
 /// Vanilla `Mth.lerp(0.2, rotO, rot)` after wrapping the old angle into range.
@@ -968,15 +923,21 @@ mod tests {
     use steel_registry::{
         blocks::properties::{BlockStateProperties, Tilt},
         entity_type::EntityTypeRef,
-        init_vanilla_registry, vanilla_blocks, vanilla_entities,
+        init_vanilla_registry, vanilla_blocks, vanilla_dimension_types, vanilla_entities,
     };
-    use steel_utils::{BlockPos, ChunkPos, Direction, types::UpdateFlags};
+    use steel_utils::{
+        BlockPos, ChunkPos, Direction, Identifier, types::Difficulty, types::UpdateFlags,
+    };
 
     use crate::{
         behavior::init_behaviors,
         block_entity::init_block_entities,
         entity::{EntityBase, entities::FireworkRocketEntity},
-        test_support::{TestPlayerBuilder, test_world, world_border_projectile_test_world},
+        level_data::GameTimeSource,
+        test_support::{
+            TestPlayerBuilder, create_test_world_with_time_source, insert_ready_full_chunk,
+            test_world, world_border_projectile_test_world,
+        },
     };
 
     struct OwnerCollisionProjectile {
@@ -986,12 +947,16 @@ mod tests {
 
     impl OwnerCollisionProjectile {
         fn new(id: i32, position: DVec3) -> Self {
+            Self::new_in_world(id, position, test_world())
+        }
+
+        fn new_in_world(id: i32, position: DVec3, world: &Arc<World>) -> Self {
             Self {
                 base: EntityBase::new(
                     id,
                     position,
                     vanilla_entities::ENDER_PEARL.dimensions,
-                    Arc::downgrade(test_world()),
+                    Arc::downgrade(world),
                 ),
                 projectile_base: ProjectileBase::new(),
             }
@@ -1077,19 +1042,77 @@ mod tests {
     }
 
     #[test]
-    fn clip_segment_hits_box_in_path() {
+    fn shared_clip_hits_box_in_path() {
         let aabb = WorldAabb::new(4.0, -0.5, -0.5, 5.0, 0.5, 0.5);
-        let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(10.0, 0.0, 0.0))
-            .expect("ray along +x should enter the box");
-        assert!((hit.x - 4.0).abs() < 1.0e-6);
+        let (scale, _) = World::intersects_aabb_with_t(
+            DVec3::ZERO,
+            DVec3::new(10.0, 0.0, 0.0),
+            aabb.min_corner(),
+            aabb.max_corner(),
+        )
+        .expect("ray along +x should enter the box");
+        assert!((scale - 0.4).abs() < 1.0e-6);
     }
 
     #[test]
-    fn clip_segment_returns_start_when_inside() {
+    fn shared_clip_misses_when_starting_inside_box() {
         let aabb = WorldAabb::new(-1.0, -1.0, -1.0, 1.0, 1.0, 1.0);
-        let hit = clip_segment(aabb, DVec3::ZERO, DVec3::new(0.0, 5.0, 0.0))
-            .expect("a ray starting inside the box hits at its origin");
-        assert_eq!(hit, DVec3::ZERO);
+        assert!(
+            World::intersects_aabb_with_t(
+                DVec3::ZERO,
+                DVec3::new(0.0, 5.0, 0.0),
+                aabb.min_corner(),
+                aabb.max_corner(),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn projectile_starting_inside_entity_box_registers_no_hit() {
+        init_vanilla_registry();
+        init_behaviors();
+
+        let fixture = create_test_world_with_time_source(
+            Identifier::new_static("projectile_inside_hitbox", "overworld"),
+            Difficulty::Normal,
+            &vanilla_dimension_types::OVERWORLD,
+            GameTimeSource::Primary,
+        );
+        let world = Arc::clone(&fixture.world);
+
+        // Crystal hitbox: x/z ±1, y..y+2.
+        let crystal_pos = DVec3::new(8.0, 64.0, 8.0);
+        insert_ready_full_chunk(&world, ChunkPos::from_entity_pos(crystal_pos));
+        let crystal = OwnerCollisionTestEntity::shared_with_type(
+            5_001,
+            crystal_pos,
+            true,
+            &vanilla_entities::END_CRYSTAL,
+        );
+        world
+            .try_add_entity(Arc::clone(&crystal))
+            .expect("crystal should spawn");
+
+        let projectile = OwnerCollisionProjectile::new_in_world(
+            5_002,
+            crystal_pos + DVec3::new(0.0, 1.0, 0.0),
+            &world,
+        );
+        projectile.set_velocity(DVec3::Y);
+
+        assert!(projectile.get_hit_result_on_move_vector().is_none());
+
+        let outside = OwnerCollisionProjectile::new_in_world(
+            5_003,
+            crystal_pos + DVec3::new(0.0, 3.0, 0.0),
+            &world,
+        );
+        outside.set_velocity(-DVec3::Y * 2.0);
+        assert!(matches!(
+            outside.get_hit_result_on_move_vector(),
+            Some(ProjectileHit::Entity(hit)) if Arc::ptr_eq(&hit.entity, &crystal)
+        ));
     }
 
     #[test]
