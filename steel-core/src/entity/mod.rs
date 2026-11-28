@@ -140,13 +140,7 @@ fn remove_entity_name_actions(mut component: TextComponent) -> TextComponent {
 ///
 /// Each new entity increments this counter to get a unique network ID. Starts
 /// at 1 (0 is reserved).
-static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(FIRST_ENTITY_ID));
-#[cfg(not(test))]
-const FIRST_ENTITY_ID: i32 = 1;
-/// Tests also build entities with small literal ids; allocating far above them
-/// keeps the two from colliding in one world.
-#[cfg(test)]
-const FIRST_ENTITY_ID: i32 = 1 << 24;
+static ENTITY_COUNTER: LazyLock<SyncMutex<i32>> = LazyLock::new(|| SyncMutex::new(1));
 const MOVEMENT_RECORD_EPSILON: f64 = 1.0e-7;
 const NO_PHYSICS_COLLISION_EPSILON: f64 = 1.0e-7;
 const WATER_ENTITY_FLOW_SCALE: f64 = 0.014;
@@ -1422,7 +1416,9 @@ pub(crate) fn entity_loot_ref<'a>(
         custom_name: None,
         sheep_color: sheep.map(|(color, _)| color),
         sheep_sheared: sheep.map(|(_, sheared)| sheared),
-        fishing_hook_open_water: entity.fishing_hook_open_water(),
+        fishing_hook_open_water: entity
+            .downcast_ref::<entities::FishingHookEntity>()
+            .map(entities::FishingHookEntity::is_open_water_fishing),
         chicken_variant: living_entity.and_then(|living| living.chicken_loot_variant()),
         mooshroom_variant: living_entity.and_then(|living| living.mooshroom_loot_variant()),
     }

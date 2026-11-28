@@ -110,7 +110,6 @@ impl EntityTable for FishingHookEntity {
         movement_emission: |_| EntityMovementEmission::None,
         can_use_portal: |_, _| false,
         default_gravity: |_| f64::from(0.03_f32),
-        fishing_hook_open_water: |hook| Some(hook.hook_state.lock().open_water),
         // The client needs the owner to draw the line; an ownerless hook
         // sends its own id.
         spawn_data: |hook| {
@@ -416,6 +415,11 @@ impl FishingHookEntity {
             state.time_until_lured = rng().random_range(100..=600);
             state.time_until_lured -= state.lure_speed;
         }
+    }
+
+    /// Whether the hook has stayed in open water since it was cast.
+    pub(crate) fn is_open_water_fishing(&self) -> bool {
+        self.hook_state.lock().open_water
     }
 
     /// Calculates if the area the player is currently fishing in is open water.

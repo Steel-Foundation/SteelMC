@@ -977,11 +977,6 @@ fn teleport_passengers(vehicle: &dyn Entity) {
     }
 }
 
-/// Returns the open-water state for fishing hooks.
-pub const fn fishing_hook_open_water<E: Entity + ?Sized>(_entity: &E) -> Option<bool> {
-    None
-}
-
 /// `Entity`'s [`EntityProps::controlling_passenger`]: entities have none.
 pub fn controlling_passenger<E: Entity + ?Sized>(_entity: &E) -> Option<SharedEntity> {
     None

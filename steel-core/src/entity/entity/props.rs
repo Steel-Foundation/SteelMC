@@ -464,8 +464,6 @@ entity_props! {
     /// Vanilla `Entity.positionRider`: places a direct passenger on this
     /// vehicle.
     fn position_rider(passenger: &dyn Entity, move_behavior: RiderMove);
-    /// Returns whether a fishing hook is in open water.
-    fn fishing_hook_open_water() -> Option<bool>;
     /// Vanilla `Entity.getControllingPassenger`: the passenger steering
     /// this entity.
     fn controlling_passenger() -> Option<SharedEntity>;
