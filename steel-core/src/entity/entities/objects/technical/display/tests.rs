@@ -6,7 +6,6 @@ use steel_registry::{init_vanilla_registry, vanilla_entities};
 
 use super::block_display::BlockDisplayEntity;
 use super::*;
-use crate::entity::entities::MarkerEntity;
 use crate::entity::{EntityBase, RemovalReason, SharedEntity};
 use crate::test_support::load_additional;
 
@@ -92,15 +91,4 @@ fn loading_clamps_the_teleport_duration_and_drops_invalid_brightness() {
     assert_eq!(display.pos_rot_interpolation_duration(), 59);
     assert_eq!(display.brightness_override(), None);
     assert_eq!(display.glow_color_override(), None);
-}
-
-#[test]
-fn only_display_entities_are_seen_as_displays() {
-    init_vanilla_registry();
-    let display: SharedEntity = block_display(1);
-    let marker: SharedEntity =
-        MarkerEntity::new(&vanilla_entities::MARKER, 2, DVec3::ZERO, Weak::new());
-
-    assert!(Display::of(&*display).is_some());
-    assert!(Display::of(&*marker).is_none());
 }

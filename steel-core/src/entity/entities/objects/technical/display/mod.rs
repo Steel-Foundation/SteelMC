@@ -1,9 +1,8 @@
 //! Vanilla `Display`: what block, item and text displays share.
 //!
 //! The state lives in the synced `Display` data layer, reached through the
-//! [`Display`] view. Entity types implement [`Parts`], start their properties
-//! from [`entity_props`], and save and load the layer from their own save and
-//! load the way a vanilla subclass calls `super`.
+//! [`Display`] view; the [`DisplayBase`] component saves it. Entity types hold
+//! the component and start their properties from [`entity_props`].
 
 pub mod block_display;
 pub mod item_display;
@@ -17,10 +16,12 @@ use simdnbt::{FromNbtTag, ToNbtTag};
 use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::vanilla_entity_data::DisplayEntityData;
 use steel_utils::nbt::{NbtNumeric as _, NbtValueInput as _};
+use steel_utils::{DowncastType, DowncastTypeKey};
 
 pub use self::transformation::Transformation;
 use self::transformation::TransformationNbt;
 use crate::chunk::light::MAX_LIGHT_LEVEL;
+use crate::entity::component::{Component, Components as _, Has};
 use crate::entity::prelude::*;
 use crate::entity::{Entity, EntityProps};
 
@@ -58,9 +59,31 @@ pub const DEFAULT_GLOW_COLOR_OVERRIDE: i32 = -1;
 /// The synced packed brightness of a display entity without an override.
 const NO_BRIGHTNESS_OVERRIDE: i32 = -1;
 
-/// A concrete display type: its synced data has the `Display` layer.
-pub trait Parts: Entity + Sized {
+/// Marks a vanilla `Display` type and saves the state its types share.
+pub struct DisplayBase;
+
+// SAFETY: This key is owned by Steel and uniquely identifies `DisplayBase`.
+unsafe impl DowncastType for DisplayBase {
+    const TYPE_KEY: DowncastTypeKey = DowncastTypeKey::new("steel:entity_component/display");
+}
+
+impl Component for DisplayBase {
+    fn save(&self, owner: &dyn Entity, nbt: &mut NbtCompound) {
+        Display::new(owner).save(nbt);
+    }
+
+    fn load(&self, owner: &dyn Entity, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        Display::new(owner).load(nbt);
+    }
+}
+
+/// A concrete display type.
+pub trait Parts: Entity + Has<DisplayBase> {
     /// Returns this entity as a display.
+    fn display(&self) -> Display<'_>;
+}
+
+impl<E: Entity + Has<DisplayBase>> Parts for E {
     fn display(&self) -> Display<'_> {
         Display::new(self)
     }
@@ -85,19 +108,15 @@ pub struct Display<'a> {
 }
 
 impl<'a> Display<'a> {
-    /// Views `entity`, whose synced data has the display layer, as a display.
+    /// Views `entity`, which holds a [`DisplayBase`], as a display.
     const fn new(entity: &'a dyn Entity) -> Self {
         Self { entity }
     }
 
-    /// Returns `entity` as a display, if its synced data has the display layer.
+    /// Returns `entity` as a display, if it is one.
     #[must_use]
     pub fn of(entity: &'a dyn Entity) -> Option<Self> {
-        entity
-            .synced_data()?
-            .lock_data()
-            .display_layer()
-            .map(|_| Self { entity })
+        entity.query::<DisplayBase>().map(|_| Self { entity })
     }
 
     /// Returns the entity this view belongs to.
@@ -312,8 +331,7 @@ impl<'a> Display<'a> {
         self.with_synced(|data| data.glow_color_override.set(value));
     }
 
-    /// Writes the fields common to all display entities.
-    pub fn save(&self, nbt: &mut NbtCompound) {
+    fn save(&self, nbt: &mut NbtCompound) {
         nbt.insert("transformation", TransformationNbt(self.transformation()));
 
         nbt.insert("billboard", self.billboard_constraints());
@@ -333,8 +351,7 @@ impl<'a> Display<'a> {
         }
     }
 
-    /// Reads the fields common to all display entities.
-    pub fn load(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+    fn load(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
         self.set_transformation(
             nbt.get("transformation")
                 .and_then(TransformationNbt::from_nbt_tag)

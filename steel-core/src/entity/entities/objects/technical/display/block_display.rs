@@ -9,7 +9,7 @@ use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::locks::CheckedMutex;
 
-use super::Parts as _;
+use super::DisplayBase;
 use crate::block_entity::block_state_nbt;
 use crate::entity::{Entity, EntityBase, EntityProps, EntityTable};
 
@@ -25,6 +25,8 @@ pub struct BlockDisplayEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(component)]
+    display: DisplayBase,
     #[entity(synced)]
     entity_data: CheckedMutex<BlockDisplayEntityData>,
 }
@@ -33,14 +35,13 @@ impl EntityTable for BlockDisplayEntity {
     const ENTITY: EntityProps<Self> = super::entity_props();
 }
 
-impl super::Parts for BlockDisplayEntity {}
-
 impl BlockDisplayEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         base.set_no_physics(true);
         Self {
             base,
             entity_type,
+            display: DisplayBase,
             entity_data: CheckedMutex::new(BlockDisplayEntityData::new()),
         }
     }
@@ -57,13 +58,10 @@ impl BlockDisplayEntity {
     }
 
     fn save_block_display(&self, nbt: &mut NbtCompound) {
-        self.display().save(nbt);
         nbt.insert("block_state", block_state_nbt::save(self.block_state()));
     }
 
     fn load_block_display(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.display().load(nbt);
-
         // TODO: Support compact default states and the property fallback from BlockState.CODEC
         self.set_block_state(
             nbt.compound("block_state")

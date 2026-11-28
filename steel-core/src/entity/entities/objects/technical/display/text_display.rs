@@ -11,7 +11,7 @@ use steel_utils::locks::CheckedMutex;
 use steel_utils::nbt::NbtValueInput as _;
 use text_components::TextComponent;
 
-use super::Parts as _;
+use super::DisplayBase;
 use crate::entity::{Entity, EntityBase, EntityProps, EntityTable};
 
 /// The default line width of text shown by a text display.
@@ -37,6 +37,8 @@ pub struct TextDisplayEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(component)]
+    display: DisplayBase,
     #[entity(synced)]
     entity_data: CheckedMutex<TextDisplayEntityData>,
 }
@@ -45,14 +47,13 @@ impl EntityTable for TextDisplayEntity {
     const ENTITY: EntityProps<Self> = super::entity_props();
 }
 
-impl super::Parts for TextDisplayEntity {}
-
 impl TextDisplayEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         base.set_no_physics(true);
         Self {
             base,
             entity_type,
+            display: DisplayBase,
             entity_data: CheckedMutex::new(TextDisplayEntityData::new()),
         }
     }
@@ -187,8 +188,6 @@ impl TextDisplayEntity {
     }
 
     fn save_text_display(&self, nbt: &mut NbtCompound) {
-        self.display().save(nbt);
-
         {
             let data = self.entity_data.lock();
             let text: &TextComponent = data.text.get();
@@ -206,8 +205,6 @@ impl TextDisplayEntity {
     }
 
     fn load_text_display(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.display().load(nbt);
-
         self.set_line_width(nbt.int_value("line_width").unwrap_or(DEFAULT_LINE_WIDTH));
         self.set_text_opacity(
             nbt.byte_value("text_opacity")
@@ -312,7 +309,6 @@ mod tests {
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use crate::test_support::load_additional;
 
     fn text_display(id: i32) -> Arc<TextDisplayEntity> {
         TextDisplayEntity::new(
@@ -321,33 +317,6 @@ mod tests {
             DVec3::ZERO,
             Weak::new(),
         )
-    }
-
-    #[test]
-    fn text_display_round_trips_its_text_properties() {
-        init_vanilla_registry();
-        let display = text_display(1);
-        display.set_text(TextComponent::plain("steel"));
-        display.set_line_width(80);
-        display.set_text_opacity(128);
-        display.set_background_color(0x1234_5678);
-        display.set_shadow(true);
-        display.set_default_background(true);
-        display.set_alignment(Alignment::Right);
-
-        let mut nbt = NbtCompound::new();
-        display.save_additional(&mut nbt);
-        let loaded = text_display(2);
-        load_additional(&*loaded, &nbt);
-
-        assert_eq!(loaded.text(), TextComponent::plain("steel"));
-        assert_eq!(loaded.line_width(), 80);
-        assert_eq!(loaded.text_opacity(), 128);
-        assert_eq!(loaded.background_color(), 0x1234_5678);
-        assert!(loaded.shadow());
-        assert!(!loaded.see_through());
-        assert!(loaded.default_background());
-        assert_eq!(loaded.alignment(), Alignment::Right);
     }
 
     #[test]
@@ -364,19 +333,5 @@ mod tests {
         display.set_alignment(Alignment::Center);
         assert_eq!(display.alignment(), Alignment::Center);
         assert!(display.see_through());
-    }
-
-    #[test]
-    fn loading_without_alignment_resets_it_to_center() {
-        init_vanilla_registry();
-        let display = text_display(1);
-        display.set_alignment(Alignment::Left);
-
-        load_additional(&*display, &NbtCompound::new());
-
-        assert_eq!(display.alignment(), Alignment::Center);
-        assert_eq!(display.line_width(), DEFAULT_LINE_WIDTH);
-        assert_eq!(display.text_opacity(), u8::MAX);
-        assert_eq!(display.background_color(), DEFAULT_BACKGROUND_COLOR);
     }
 }

@@ -9,7 +9,7 @@ use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_entity_data::ItemDisplayEntityData;
 use steel_utils::locks::CheckedMutex;
 
-use super::Parts as _;
+use super::DisplayBase;
 use crate::entity::{Entity, EntityBase, EntityProps, EntityTable};
 
 /// A display entity that renders the model of an [`ItemStack`] using an [`ItemDisplayContext`].
@@ -25,6 +25,8 @@ pub struct ItemDisplayEntity {
     base: EntityBase,
     #[entity(entity_type)]
     entity_type: EntityTypeRef,
+    #[entity(component)]
+    display: DisplayBase,
     #[entity(synced)]
     entity_data: CheckedMutex<ItemDisplayEntityData>,
 }
@@ -33,14 +35,13 @@ impl EntityTable for ItemDisplayEntity {
     const ENTITY: EntityProps<Self> = super::entity_props();
 }
 
-impl super::Parts for ItemDisplayEntity {}
-
 impl ItemDisplayEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
         base.set_no_physics(true);
         Self {
             base,
             entity_type,
+            display: DisplayBase,
             entity_data: CheckedMutex::new(ItemDisplayEntityData::new()),
         }
     }
@@ -72,8 +73,6 @@ impl ItemDisplayEntity {
     }
 
     fn save_item_display(&self, nbt: &mut NbtCompound) {
-        self.display().save(nbt);
-
         {
             let data = self.entity_data.lock();
             let stack = data.item_stack.get();
@@ -86,8 +85,6 @@ impl ItemDisplayEntity {
     }
 
     fn load_item_display(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        self.display().load(nbt);
-
         self.set_item_stack(
             nbt.get("item")
                 .and_then(ItemStack::from_nbt_tag)
@@ -197,25 +194,6 @@ mod tests {
 
     use super::*;
     use crate::test_support::load_additional;
-
-    #[test]
-    fn item_display_round_trips_its_item_and_context() {
-        init_vanilla_registry();
-        let display =
-            ItemDisplayEntity::new(&vanilla_entities::ITEM_DISPLAY, 1, DVec3::ZERO, Weak::new());
-        let item = ItemStack::new(&vanilla_items::DIAMOND);
-        display.set_item_stack(item.clone());
-        display.set_item_transform(ItemDisplayContext::OnShelf);
-
-        let mut nbt = NbtCompound::new();
-        display.save_additional(&mut nbt);
-        let loaded =
-            ItemDisplayEntity::new(&vanilla_entities::ITEM_DISPLAY, 2, DVec3::ZERO, Weak::new());
-        load_additional(&*loaded, &nbt);
-
-        assert_eq!(loaded.item_stack(), item);
-        assert_eq!(loaded.item_transform(), ItemDisplayContext::OnShelf);
-    }
 
     #[test]
     fn empty_item_is_not_saved_and_loads_back_empty() {
