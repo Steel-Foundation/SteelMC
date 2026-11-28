@@ -97,7 +97,7 @@ pub fn on_explosion_hit<E: Entity + ?Sized>(_entity: &E, _explosion_source: Opti
 
 /// `Entity`'s [`EntityProps::can_be_hit_by_projectile`].
 pub fn can_be_hit_by_projectile<E: Entity + ?Sized>(entity: &E) -> bool {
-    !entity.is_removed() && entity.is_pickable()
+    entity.is_alive() && entity.is_pickable()
 }
 
 /// `Entity`'s [`EntityProps::kill`].

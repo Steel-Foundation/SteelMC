@@ -60,12 +60,6 @@ impl SmallFireballEntity {
         }
     }
 
-    // TODO: `Entity.canBeHitByProjectile` checks `isAlive` in vanilla; move this
-    // there once the base rule is fixed for every projectile.
-    fn projectile_can_hit_entity(&self, target: &dyn Entity) -> bool {
-        target.is_alive() && hurting::can_hit_entity(self, target)
-    }
-
     fn projectile_on_hit(&self, hit: &ProjectileHit) {
         projectile::on_hit(self, hit);
         self.set_removed(RemovalReason::Discarded);
@@ -131,7 +125,6 @@ impl EntityTable for SmallFireballEntity {
 
 impl ProjectileTable for SmallFireballEntity {
     const PROJECTILE: ProjectileProps<Self> = ProjectileProps {
-        can_hit_entity: Self::projectile_can_hit_entity,
         on_hit: Self::projectile_on_hit,
         on_hit_entity: Self::projectile_on_hit_entity,
         on_hit_block: Self::projectile_on_hit_block,

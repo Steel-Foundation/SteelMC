@@ -59,7 +59,6 @@ impl EntityTable for Player {
         fire_immune_ticks: |_| TICKS_PER_SECOND,
         remaining_fire_ticks_cap: |entity| entity.abilities.lock().invulnerable.then_some(1),
         fire_ignite_extra_ticks: |_| rand::random_range(1..=2),
-        can_be_hit_by_projectile: Self::entity_can_be_hit_by_projectile,
         uses_client_movement_packets: |_| true,
         can_simulate_movement: |_| true,
         is_effective_ai: |_| true,
@@ -310,10 +309,6 @@ impl Player {
 
     fn entity_is_pushable(&self) -> bool {
         self.living().health() > 0.0 && !self.is_spectator() && !self.on_climbable()
-    }
-
-    fn entity_can_be_hit_by_projectile(&self) -> bool {
-        self.living().health() > 0.0 && self.is_pickable()
     }
 
     fn entity_known_movement(&self) -> DVec3 {
