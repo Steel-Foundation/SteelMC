@@ -36,6 +36,7 @@ const SWEEP_AREA_INFLATE_Y: f64 = 0.25;
 const SWEEP_MAX_DISTANCE_SQ: f64 = 9.0;
 /// Vanilla passes `0.4F` to a `double` parameter, widening the `f32` approximation.
 const SWEEP_KNOCKBACK: f64 = 0.4_f32 as f64;
+const STAB_KNOCKBACK: f64 = 0.4_f32 as f64;
 
 /// The kind of melee hit, which selects its attack sound.
 ///
@@ -410,9 +411,10 @@ impl Player {
                 .is_some_and(|world| entity.hurt(&world, &damage_source, damage));
         affected |= damage_dealt;
         if deals_knockback {
+            self.cause_extra_knockback(entity, STAB_KNOCKBACK, old_movement);
             self.cause_extra_knockback(
                 entity,
-                0.4 + Self::get_knockback(0.0, &attacking_item, &enchantment_context),
+                Self::get_knockback(0.0, &attacking_item, &enchantment_context),
                 old_movement,
             );
         }
