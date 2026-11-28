@@ -53,6 +53,14 @@ impl ItemBehavior for HoneycombItem {
                 0,
                 Some(context.player.id()),
             );
+            context.world.play_sound(
+                &ITEM_HONEYCOMB_WAX_ON,
+                SoundSource::Blocks,
+                pos,
+                1.0,
+                1.0,
+                Some(context.player.id()),
+            );
             emit_connected_chest_block_change(
                 context.world,
                 pos,
