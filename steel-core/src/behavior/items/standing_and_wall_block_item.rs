@@ -119,9 +119,7 @@ impl StandingAndWallBlockItem {
             }
         }
 
-        let Some(state) = selected_state else {
-            return None;
-        };
+        let state = selected_state?;
 
         let collision_shape = state.get_collision_shape_at(place_pos);
         place_context
