@@ -93,6 +93,7 @@ impl StandingAndWallBlockItem {
         let skip_direction = self.attachment_direction.opposite();
         let place_pos = place_context.place_pos();
 
+        let mut selected_state = None;
         for direction in directions {
             // Skip the opposite of attachment direction
             // (e.g., for torches with attachment_direction=Down, skip Up)
@@ -100,14 +101,11 @@ impl StandingAndWallBlockItem {
                 continue;
             }
 
-            // Choose state based on direction
             let possible_state = if direction == self.attachment_direction {
-                // Try standing block
                 block_behaviors
                     .get_behavior(self.standing_block)
                     .get_state_for_placement(place_context)
             } else {
-                // Use cached wall state
                 wall_state
             };
 
@@ -115,22 +113,21 @@ impl StandingAndWallBlockItem {
                 continue;
             };
 
-            if !can_place(place_context.world, state, place_pos) {
-                continue;
-            }
-
-            // Vanilla's canPlace checks canSurvive (already done in get_state_for_placement)
-            // Then checks isUnobstructed
-            let collision_shape = state.get_collision_shape_at(place_context.place_pos());
-            if place_context
-                .world
-                .is_unobstructed(collision_shape, place_context.place_pos())
-            {
-                return Some(state);
+            if can_place(place_context.world, state, place_pos) {
+                selected_state = Some(state);
+                break;
             }
         }
 
-        None
+        let Some(state) = selected_state else {
+            return None;
+        };
+
+        let collision_shape = state.get_collision_shape_at(place_pos);
+        place_context
+            .world
+            .is_unobstructed(collision_shape, place_pos)
+            .then_some(state)
     }
 
     /// Gets the block reference for a placed state (for sound lookup).
