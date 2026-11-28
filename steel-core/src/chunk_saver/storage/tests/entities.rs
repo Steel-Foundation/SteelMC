@@ -1,5 +1,6 @@
 use super::*;
-use crate::entity::entities::EndCrystalEntity;
+use crate::entity::ActiveMobEffect;
+use crate::entity::entities::{EndCrystalEntity, PigEntity};
 use crate::entity::next_entity_id;
 use crate::entity::prelude::*;
 use crate::entity::{ENTITY_LOAD_MAX_HORIZONTAL_POSITION, ENTITY_LOAD_MAX_VERTICAL_POSITION};
@@ -9,6 +10,7 @@ use steel_registry::RegistryEntry as _;
 use steel_registry::data_components::vanilla_components::{CUSTOM_NAME, REPAIR_COST};
 use steel_registry::item_stack::ItemStack;
 use steel_registry::vanilla_items;
+use steel_registry::vanilla_mob_effects;
 
 fn test_persistent_chicken(pos: DVec3) -> PersistentEntity {
     PersistentEntity {
@@ -694,4 +696,43 @@ fn runtime_entity_passengers_skip_non_serializable_entities_like_vanilla() {
     assert_eq!(loaded.status, ChunkStatus::Full);
     assert_eq!(loaded.pending_entities.len(), 1);
     assert_eq!(loaded.pending_entities[0].uuid(), vehicle_uuid);
+}
+
+#[test]
+fn living_mob_health_and_effects_roundtrip_with_chunk_entities() {
+    init_globals();
+
+    let world_fixture = fresh_test_world("living_entity_persistence");
+    let pos = DVec3::new(1.5, 64.0, 1.5);
+    let pig: SharedEntity =
+        PigEntity::new(&vanilla_entities::PIG, next_entity_id(), pos, Weak::new());
+    let living = pig
+        .as_living_entity()
+        .expect("pig should be a living entity");
+    living.set_health(7.5);
+    living.add_mob_effect(ActiveMobEffect::with_duration(
+        vanilla_mob_effects::HASTE,
+        100,
+        1,
+    ));
+
+    let persistent = ChunkStorage::entities_to_persistent(slice::from_ref(&pig));
+    assert_eq!(persistent.len(), 1);
+    assert!(!persistent[0].nbt_data.is_empty());
+
+    let level = Arc::downgrade(&world_fixture.world);
+    let loaded =
+        ChunkStorage::persistent_to_entity_at_level(&persistent[0], ChunkPos::new(0, 0), &level)
+            .expect("saved pig should load");
+    let living = loaded
+        .as_living_entity()
+        .expect("loaded pig should be a living entity");
+
+    assert_eq!(living.health(), 7.5);
+    let effect = living
+        .living_base()
+        .mob_effect(vanilla_mob_effects::HASTE)
+        .expect("haste effect should persist with the entity");
+    assert_eq!(effect.duration(), 100);
+    assert_eq!(effect.amplifier(), 1);
 }

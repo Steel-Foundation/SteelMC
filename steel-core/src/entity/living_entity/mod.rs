@@ -6,6 +6,7 @@ use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{DyeColor, vanilla_custom_stats};
 use steel_utils::TICKS_PER_SECOND;
 use steel_utils::locks::CheckedMutex;
+use steel_utils::nbt::NbtValueInput as _;
 
 use std::ops::Deref;
 
@@ -306,7 +307,7 @@ pub fn base_tick<E: Parts>(entity: &E) {
     living.living_base().tick_last_hurt_by_player_memory();
     living
         .living_base()
-        .tick_living_combat_memory(living.tick_count());
+        .tick_living_combat_memory(living.level().as_deref(), living.tick_count());
 }
 
 /// `LivingEntity`'s [`EntityProps::set_y_body_rot`].
@@ -475,6 +476,7 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
         tick: tick::<E>,
         base_tick: base_tick::<E>,
         hurt: hurt::<E>,
+        blocks_building: |_| true,
         set_y_body_rot: set_y_body_rot::<E>,
         stop_riding: stop_riding::<E>,
         ride_tick: ride_tick::<E>,
@@ -701,30 +703,30 @@ impl<'a> Living<'a> {
         }
     }
 
-    /// Appends vanilla-shaped living state used by command NBT predicates.
-    pub fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+    /// Appends the persisted health, damage state, attributes and effects.
+    pub fn save_persistent_living_data(&self, nbt: &mut NbtCompound) {
+        self.save_living_state(nbt);
+        nbt.insert("attributes", self.attributes().lock().to_persistent_nbt());
+    }
+
+    /// Appends the living fields shared by disk saves and command snapshots.
+    fn save_living_state(&self, nbt: &mut NbtCompound) {
         nbt.insert("Health", self.health());
-        nbt.insert(
-            "HurtTime",
-            NbtTag::Short(self.living_base().hurt_time() as i16),
-        );
-        nbt.insert(
-            "DeathTime",
-            NbtTag::Short(self.living_base().death_time() as i16),
-        );
         nbt.insert("AbsorptionAmount", self.absorption_amount());
-        nbt.insert(
-            "current_impulse_context_reset_grace_time",
-            self.living_base()
-                .current_impulse_context_reset_grace_time(),
-        );
-        if let Some(impact) = self.living_base().current_impulse_impact_pos() {
+        self.living_base().save_damage_state(nbt, self.tick_count());
+        self.living_base().save_impulse_state(nbt);
+
+        nbt.insert("FallFlying", nbt_bool(self.is_fall_flying()));
+        if let Some(pos) = self.sleeping_pos() {
             nbt.insert(
-                "current_explosion_impact_pos",
-                NbtList::Double(vec![impact.x, impact.y, impact.z]),
+                "sleeping_pos",
+                NbtTag::IntArray(vec![pos.x(), pos.y(), pos.z()]),
             );
         }
-        nbt.insert("attributes", self.attributes().lock().to_vanilla_nbt());
+
+        if self.as_mob().is_none() {
+            self.save_equipment(nbt);
+        }
 
         let mut effects = self.living_base().active_mob_effects();
         effects.sort_by_key(|effect| effect.effect().try_id().unwrap_or(usize::MAX));
@@ -739,39 +741,35 @@ impl<'a> Living<'a> {
                 ),
             );
         }
+    }
 
-        nbt.insert("FallFlying", nbt_bool(self.is_fall_flying()));
-        if let Some(pos) = self.sleeping_pos() {
-            nbt.insert(
-                "sleeping_pos",
-                NbtTag::IntArray(vec![pos.x(), pos.y(), pos.z()]),
-            );
+    /// Loads the state written by [`Self::save_persistent_living_data`].
+    pub fn load_persistent_living_data(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
+        self.living_base().load_damage_state(nbt, self.tick_count());
+        self.attributes().lock().load_vanilla_nbt(nbt);
+        self.living_base().load_mob_effects(nbt);
+        self.set_health(
+            nbt.float_value("Health")
+                .unwrap_or_else(|| self.max_health()),
+        );
+        self.living_base().load_impulse_state(nbt);
+        self.set_fall_flying(nbt.byte_value("FallFlying").is_some_and(|value| value != 0));
+        match nbt.int_array("sleeping_pos").filter(|pos| pos.len() == 3) {
+            Some(pos) => {
+                self.set_sleeping_pos(BlockPos::new(pos[0], pos[1], pos[2]));
+                self.set_pose(EntityPose::Sleeping);
+            }
+            None => self.clear_sleeping_pos(),
         }
-        if let Some(uuid) = self.last_hurt_by_player_uuid() {
-            nbt.insert(
-                "last_hurt_by_player",
-                NbtTag::IntArray(uuid.to_int_array().to_vec()),
-            );
-            nbt.insert(
-                "last_hurt_by_player_memory_time",
-                self.last_hurt_by_player_memory_time(),
-            );
-        }
-        if let Some(entity) = self.last_hurt_by_mob() {
-            nbt.insert(
-                "last_hurt_by_mob",
-                NbtTag::IntArray(entity.uuid().to_int_array().to_vec()),
-            );
-            nbt.insert(
-                "ticks_since_last_hurt_by_mob",
-                self.tick_count()
-                    .wrapping_sub(self.last_hurt_by_mob_timestamp()),
-            );
-        }
-
         if self.as_mob().is_none() {
-            self.save_equipment(nbt);
+            self.load_equipment(nbt);
         }
+    }
+
+    /// Appends vanilla-shaped living state used by command NBT predicates.
+    pub fn save_command_nbt(&self, nbt: &mut NbtCompound) {
+        self.save_living_state(nbt);
+        nbt.insert("attributes", self.attributes().lock().to_vanilla_nbt());
     }
 
     /// Gets the current health of the entity.

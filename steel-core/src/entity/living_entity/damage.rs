@@ -144,7 +144,7 @@ impl Living<'_> {
     /// Returns the mob that last hurt this entity, if still resolvable.
     #[must_use]
     pub fn last_hurt_by_mob(&self) -> Option<SharedEntity> {
-        self.living_base().last_hurt_by_mob()
+        self.living_base().last_hurt_by_mob(self.level().as_deref())
     }
 
     /// Returns the tick timestamp this entity was last hurt by a mob.
@@ -1016,7 +1016,7 @@ fn death_loot_items_with_rng(
         .with_luck(luck)
         .with_origin(position)
         .with_game_time(world.game_time())
-        .with_killed_by_player(killed_by_player)
+        .with_killed_by_player(last_damage_player.is_some())
         .with_this_entity(this_entity)
         .with_damage_source(damage_source);
     if let Some(entity) = causing_entity {

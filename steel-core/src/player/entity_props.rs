@@ -50,7 +50,6 @@ impl EntityTable for Player {
                 &sound_events::ENTITY_PLAYER_BIG_FALL,
             )
         },
-        blocks_building: |_| true,
         is_pickable: |entity| !entity.is_spectator() && !entity.is_removed(),
         is_pushable: Self::entity_is_pushable,
         on_climbable: Self::on_climbable,

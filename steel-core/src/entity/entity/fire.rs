@@ -74,11 +74,6 @@ pub trait EntityFireAndFreeze: Entity {
         }
     }
 
-    /// Returns whether the entity is on fire on the server.
-    fn is_on_fire(&self) -> bool {
-        self.base().is_on_fire(self.fire_immune())
-    }
-
     /// Returns whether this entity currently renders as visually on fire.
     fn has_visual_fire(&self) -> bool {
         self.base().has_visual_fire()
@@ -142,22 +137,6 @@ pub trait EntityFireAndFreeze: Entity {
 
         synced_data.set_base_ticks_frozen(self.ticks_frozen());
         synced_data.set_base_on_fire_flag(self.is_on_fire() || self.has_visual_fire());
-    }
-
-    /// Plays vanilla's extinguished-on-fire entity sound.
-    fn play_entity_on_fire_extinguished_sound(&self) {
-        let Some(world) = self.level() else {
-            return;
-        };
-        let pitch = 1.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
-        world.play_sound_at(
-            &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
-            self.sound_source(),
-            self.position(),
-            0.7,
-            pitch,
-            None,
-        );
     }
 }
 

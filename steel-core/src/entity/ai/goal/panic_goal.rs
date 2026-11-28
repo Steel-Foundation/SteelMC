@@ -1,4 +1,3 @@
-use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_registry::blocks::block_state_ext::BlockStateExt as _;
 use steel_registry::vanilla_damage_type_tags;
@@ -125,6 +124,7 @@ mod tests {
     use crate::entity::damage::DamageSource;
     use crate::entity::entities::ChickenEntity;
     use crate::entity::living_entity;
+    use crate::entity::prelude::*;
     use crate::test_support::test_world;
 
     #[test]

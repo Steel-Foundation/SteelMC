@@ -641,8 +641,17 @@ pub fn move_entity<E: Entity + ?Sized>(
     delta: DVec3,
 ) -> Option<MoveResult> {
     let world = this.level()?;
+    // TODO: also predict self movement of entities simulated on both sides.
+    let predicted = mover_type != MoverType::SelfMovement && this.uses_stepped_interpolation();
+
     if this.no_physics() {
-        return this.move_without_physics(delta);
+        let result = this.move_without_physics(delta)?;
+        if predicted {
+            this.base()
+                .record_predicted_movement(result.actual_movement);
+        }
+
+        return Some(result);
     }
 
     let mut movement = delta;
@@ -683,7 +692,13 @@ pub fn move_entity<E: Entity + ?Sized>(
             this.remove_latest_movement_recording();
             return None;
         }
+
+        if predicted {
+            this.base()
+                .record_predicted_movement(result.actual_movement);
+        }
     }
+
     let vertical_state_update =
         EntityVerticalMovementStateUpdate::for_move(movement, this.is_server_driven_movement());
     let movement_flags = EntityMovementFlags::after_move_with_previous(
@@ -780,7 +795,7 @@ fn restitute_movement_after_collisions(
                 EntityFallOnContext::from_entity(entity.fall_distance(), entity),
             );
             entity.game_event(&vanilla_game_events::BOUNCE);
-            entity.base().request_position_sync();
+            entity.base().mark_position_for_interpolation();
         }
     }
     entity.set_velocity(velocity);

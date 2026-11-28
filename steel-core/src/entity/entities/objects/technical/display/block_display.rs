@@ -1,23 +1,21 @@
 //! Vanilla `Display.BlockDisplay`: renders a block state without collision.
 
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
-use simdnbt::owned::{NbtCompound, NbtTag};
+use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
-use steel_registry::blocks::behavior::PushReaction;
 use steel_registry::entity_type::EntityTypeRef;
-use steel_registry::vanilla_blocks;
 use steel_registry::vanilla_entity_data::BlockDisplayEntityData;
+use steel_registry::{REGISTRY, vanilla_blocks};
 use steel_utils::BlockStateId;
 use steel_utils::locks::CheckedMutex;
 
+use super::Parts as _;
 use crate::block_entity::block_state_nbt;
-use crate::entity::EntityTable;
-use crate::entity::prelude::*;
-use crate::entity::{EntityBase, EntityProps};
+use crate::entity::{Entity, EntityBase, EntityProps, EntityTable};
 
-/// A block display.
-// TODO: persist the shared `Display` state (transformation, billboard,
-// interpolation, view range, shadow, brightness, glow color, size).
+/// A display entity that renders the block model associated with a [`BlockStateId`].
+///
+/// The state shared by all displays is reached through [`Parts::display`](super::Parts::display).
 #[entity_behavior(class = "BlockDisplay")]
 #[derive(Entity)]
 #[entity(save = Self::save_block_display, load = Self::load_block_display)]
@@ -32,17 +30,14 @@ pub struct BlockDisplayEntity {
 }
 
 impl EntityTable for BlockDisplayEntity {
-    const ENTITY: EntityProps<Self> = EntityProps {
-        // `Display.tick` never calls `super`.
-        tick: Self::tick_display,
-        piston_push_reaction: |_| PushReaction::IgnoreEntity,
-        is_ignoring_block_triggers: |_| true,
-        ..EntityProps::new()
-    };
+    const ENTITY: EntityProps<Self> = super::entity_props();
 }
+
+impl super::Parts for BlockDisplayEntity {}
 
 impl BlockDisplayEntity {
     fn from_base(base: EntityBase, entity_type: EntityTypeRef) -> Self {
+        base.set_no_physics(true);
         Self {
             base,
             entity_type,
@@ -50,51 +45,47 @@ impl BlockDisplayEntity {
         }
     }
 
-    /// The displayed block state.
+    /// Gets the block state (by ID) of this block display.
     #[must_use]
     pub fn block_state(&self) -> BlockStateId {
         *self.entity_data.lock().block_state.get()
     }
 
-    /// Sets the displayed block state.
-    pub fn set_block_state(&self, state: BlockStateId) {
-        self.entity_data.lock().block_state.set(state);
-    }
-
-    /// `Display.tick` on the server: leave a removed vehicle. Displays skip the
-    /// base entity tick.
-    fn tick_display(&self) {
-        if self.vehicle().is_some_and(|vehicle| vehicle.is_removed()) {
-            self.stop_riding();
-        }
+    /// Sets the block state (by ID) of this block display.
+    pub fn set_block_state(&self, id: BlockStateId) {
+        self.entity_data.lock().block_state.set(id);
     }
 
     fn save_block_display(&self, nbt: &mut NbtCompound) {
-        nbt.insert(
-            "block_state",
-            NbtTag::Compound(block_state_nbt::save(self.block_state())),
-        );
+        self.display().save(nbt);
+        nbt.insert("block_state", block_state_nbt::save(self.block_state()));
     }
 
     fn load_block_display(&self, nbt: BorrowedNbtCompoundView<'_, '_>) {
-        let state = nbt
-            .compound("block_state")
-            .and_then(block_state_nbt::load)
-            .unwrap_or_else(|| vanilla_blocks::AIR.default_state());
-        self.set_block_state(state);
+        self.display().load(nbt);
+
+        // TODO: Support compact default states and the property fallback from BlockState.CODEC
+        self.set_block_state(
+            nbt.compound("block_state")
+                .and_then(block_state_nbt::load)
+                .or_else(|| {
+                    let id = BlockStateId(u16::try_from(nbt.int("block_state")?).ok()?);
+
+                    REGISTRY.blocks.by_state_id(id).map(|_| id)
+                })
+                .unwrap_or(vanilla_blocks::AIR.default_state()),
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Weak;
 
+    use glam::DVec3;
     use steel_registry::{init_vanilla_registry, vanilla_entities};
 
     use super::*;
-    use glam::DVec3;
-    use std::sync::Weak;
-
-    use crate::entity::{RemovalReason, SharedEntity};
     use crate::test_support::load_additional;
 
     #[test]
@@ -126,27 +117,5 @@ mod tests {
         );
         load_additional(&*loaded, &nbt);
         assert_eq!(loaded.block_state(), state);
-    }
-
-    #[test]
-    fn block_display_leaves_a_removed_vehicle() {
-        init_vanilla_registry();
-        let display: SharedEntity = BlockDisplayEntity::new(
-            &vanilla_entities::BLOCK_DISPLAY,
-            1,
-            DVec3::ZERO,
-            Weak::new(),
-        );
-        let vehicle: SharedEntity = BlockDisplayEntity::new(
-            &vanilla_entities::BLOCK_DISPLAY,
-            2,
-            DVec3::ZERO,
-            Weak::new(),
-        );
-        EntityBase::restore_passenger_relationship(&vehicle, &display);
-        vehicle.set_removed(RemovalReason::Discarded);
-
-        display.tick();
-        assert!(display.vehicle().is_none());
     }
 }

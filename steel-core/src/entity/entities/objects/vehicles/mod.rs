@@ -5,6 +5,7 @@ mod chest_minecart;
 mod minecart;
 mod minecart_behavior;
 mod spawner_minecart;
+mod tnt_minecart;
 pub mod vehicle_entity;
 
 pub use abstract_minecart::{AbstractMinecart, AbstractMinecartBase, AbstractMinecartProps};
@@ -13,6 +14,7 @@ pub use chest_minecart::ChestMinecartEntity;
 pub use minecart::MinecartEntity;
 pub use minecart_behavior::MinecartBehavior;
 pub use spawner_minecart::SpawnerMinecartEntity;
+pub use tnt_minecart::TntMinecartEntity;
 pub use vehicle_entity::Vehicle;
 
 #[cfg(test)]

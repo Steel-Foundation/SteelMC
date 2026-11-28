@@ -359,6 +359,8 @@ pub struct EntityTrackerSnapshot {
     pub hurt_marked: bool,
     /// Whether movement sync must send a full position packet.
     pub requires_precise_position: bool,
-    /// Advance the movement tracker to its next interval.
+    /// Movement both sides already simulated since the last snapshot.
+    pub predicted_movement: DVec3,
+    /// Whether the current position needs its own interpolation step.
     pub sync_position: bool,
 }

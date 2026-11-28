@@ -9,6 +9,7 @@ use crate::entity::shearable::Shearable;
 use crate::entity::{leash::Leashable, pushing::EntityPush};
 use rand::{RngExt, rng};
 use steel_math::DEGREE_90;
+use steel_math::fast_floor;
 use steel_math::trig;
 use steel_utils::DowncastTypeKey;
 use steel_utils::nbt::{NbtNumeric, nbt_collection_values};
@@ -463,6 +464,12 @@ pub trait Entity: EntityMethods + AsEntity + ErasedType + Send + Sync + 'static 
         self.as_living_entity().is_some()
     }
 
+    /// Whether clients replay this entity's movement as a path of timed steps.
+    fn uses_stepped_interpolation(&self) -> bool {
+        // TODO: move the shulker exception into an override once Shulker is implemented.
+        self.is_living_entity() && self.entity_type() != &vanilla_entities::SHULKER
+    }
+
     /// Returns whether this entity belongs to vanilla's `AbstractArrow` hierarchy.
     fn is_abstract_arrow(&self) -> bool {
         self.entity_type().is_abstract_arrow
@@ -824,6 +831,46 @@ pub fn spawn_position<E: Entity + ?Sized>(entity: &E) -> DVec3 {
 /// `Entity`'s [`EntityProps::blocks_building`].
 pub const fn blocks_building<E: Entity + ?Sized>(_entity: &E) -> bool {
     false
+}
+
+/// `Entity`'s [`EntityProps::is_on_fire`].
+pub fn is_on_fire<E: Entity + ?Sized>(entity: &E) -> bool {
+    entity.base().is_on_fire(entity.fire_immune())
+}
+
+/// `Entity`'s [`EntityProps::play_entity_on_fire_extinguished_sound`].
+pub fn play_entity_on_fire_extinguished_sound<E: Entity + ?Sized>(entity: &E) {
+    let Some(world) = entity.level() else {
+        return;
+    };
+    let pitch = 1.6 + (rand::random::<f32>() - rand::random::<f32>()) * 0.4;
+    world.play_sound_at(
+        &sound_events::ENTITY_GENERIC_EXTINGUISH_FIRE,
+        entity.sound_source(),
+        entity.position(),
+        0.7,
+        pitch,
+        None,
+    );
+}
+
+/// `Entity`'s [`EntityProps::light_level_dependent_magic_value`].
+pub fn light_level_dependent_magic_value<E: Entity + ?Sized>(entity: &E) -> f32 {
+    let Some(world) = entity.level() else {
+        return 0.0;
+    };
+
+    let position = entity.position();
+    let eye_pos = BlockPos::new(
+        fast_floor(position.x),
+        fast_floor(entity.eye_y()),
+        fast_floor(position.z),
+    );
+    if !world.is_full_chunk_loaded_at(eye_pos) {
+        return 0.0;
+    }
+
+    world.light_level_dependent_magic_value(eye_pos)
 }
 
 /// `Entity`'s [`EntityProps::is_pickable`].

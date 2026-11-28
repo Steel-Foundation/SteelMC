@@ -35,6 +35,15 @@ pub trait Parts: Entity {
         false
     }
 
+    /// `VehicleEntity.destroy(ServerLevel, DamageSource)`: breaks the vehicle
+    /// `source` destroyed, by default into its [`Self::drop_item`].
+    fn destroy(&self, world: &World, _source: &DamageSource)
+    where
+        Self: Sized,
+    {
+        self.vehicle_entity().destroy(world, self.drop_item());
+    }
+
     /// Returns this entity as a vehicle.
     fn vehicle_entity(&self) -> Vehicle<'_>
     where
@@ -183,7 +192,7 @@ pub fn hurt<E: Parts>(entity: &E, world: &World, source: &DamageSource, amount: 
             entity.set_removed(RemovalReason::Discarded);
         }
     } else {
-        vehicle.destroy(world, entity.drop_item());
+        entity.destroy(world, source);
     }
     true
 }

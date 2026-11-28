@@ -239,10 +239,11 @@ pub struct EntityBaseState {
     fall_distance: f64,
     stuck_speed_multiplier: DVec3,
     no_physics: bool,
+    predicted_movement: DVec3,
+    sync_position: bool,
     needs_velocity_sync: bool,
     hurt_marked: bool,
     requires_precise_position: bool,
-    sync_position: bool,
 }
 
 impl EntityBaseState {
@@ -280,10 +281,11 @@ impl EntityBaseState {
             fall_distance: 0.0,
             stuck_speed_multiplier: DVec3::ZERO,
             no_physics: false,
+            predicted_movement: DVec3::ZERO,
+            sync_position: false,
             needs_velocity_sync: false,
             hurt_marked: false,
             requires_precise_position: false,
-            sync_position: false,
         }
     }
 
@@ -919,11 +921,8 @@ impl EntityBase {
         self.state.lock().requires_precise_position
     }
 
-    pub(crate) fn request_position_sync(&self) {
-        self.state.lock().sync_position = true;
-    }
-
-    /// Consumes the pending position sync.
+    /// Reads the tracker's movement state, consuming the pending predicted
+    /// movement and position sync.
     #[must_use]
     pub fn take_tracker_snapshot(&self) -> EntityTrackerSnapshot {
         let mut state = self.state.lock();
@@ -935,6 +934,7 @@ impl EntityBase {
             needs_velocity_sync: state.needs_velocity_sync,
             hurt_marked: state.hurt_marked,
             requires_precise_position: state.requires_precise_position,
+            predicted_movement: mem::take(&mut state.predicted_movement),
             sync_position: mem::take(&mut state.sync_position),
         }
     }
@@ -942,6 +942,14 @@ impl EntityBase {
     /// Sets whether tracker movement sync must send a full position packet.
     pub fn set_requires_precise_position(&self, requires_precise_position: bool) {
         self.state.lock().requires_precise_position = requires_precise_position;
+    }
+
+    pub(crate) fn record_predicted_movement(&self, movement: DVec3) {
+        self.state.lock().predicted_movement += movement;
+    }
+
+    pub(crate) fn mark_position_for_interpolation(&self) {
+        self.state.lock().sync_position = true;
     }
 
     /// Gets the world this entity is in.

@@ -7,6 +7,9 @@ use glam::DVec3;
 
 use crate::trig;
 
+/// length below which mc normalization returns zero
+pub const NORMALIZE_EPSILON: f64 = 1.0e-5_f32 as f64;
+
 /// Returns the table-backed cosine and sine vanilla's rotations index.
 fn cos_sin(radians: f32) -> (f64, f64) {
     let angle = f64::from(radians);
@@ -55,7 +58,7 @@ pub fn z_rot(vector: DVec3, radians: f32) -> DVec3 {
 #[must_use]
 pub fn normalize(vector: DVec3) -> DVec3 {
     let length = vector.length();
-    if length < f64::from(1.0e-5_f32) {
+    if length < NORMALIZE_EPSILON {
         DVec3::ZERO
     } else {
         vector / length

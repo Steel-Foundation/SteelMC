@@ -528,9 +528,9 @@ impl CommandSource {
     }
 
     pub fn bind_chat_type(&self, registry_id: i32) -> ChatTypeBound {
-        let sender_name = self.player().map_or_else(
+        let sender_name = self.entity().map_or_else(
             || TextComponent::plain(self.sender.to_string()),
-            |player| player.display_name(),
+            |entity| entity.display_name(),
         );
 
         ChatTypeBound::new(registry_id, sender_name)

@@ -127,7 +127,7 @@ entity_props! {
     fn plain_text_name() -> String;
     /// Returns whether this entity obstructs block placement.
     ///
-    /// Base entities do not obstruct placement unless a concrete entity type opts in.
+    /// Living entities obstruct placement; other entity types opt in.
     fn blocks_building() -> bool;
     /// Returns whether this entity can be targeted by picking and interaction raycasts.
     ///
@@ -262,6 +262,13 @@ entity_props! {
     fn spawn_data() -> i32;
     /// Returns whether this entity is immune to fire effects and fire damage.
     fn fire_immune() -> bool;
+    /// Returns whether the entity is on fire on the server.
+    fn is_on_fire() -> bool;
+    /// Plays the sound of this entity's fire going out.
+    fn play_entity_on_fire_extinguished_sound();
+    /// Returns the curved brightness at this entity's eye, or `0.0` when its
+    /// chunk is unavailable.
+    fn light_level_dependent_magic_value() -> f32;
     /// Returns vanilla fire immunity cooldown ticks after not being ignited.
     fn fire_immune_ticks() -> i32;
     /// Returns whether vanilla should play this entity's lava hurt sound.

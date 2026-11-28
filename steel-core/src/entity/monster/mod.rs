@@ -7,7 +7,6 @@ use crate::entity::DamageSource;
 use crate::physics::MoveResult;
 use crate::player::Player;
 use crate::world::World;
-use steel_math::fast_floor;
 use steel_protocol::packets::game::SoundSource;
 use steel_registry::entity_type::EntityTypeRef;
 use steel_registry::sound_event::SoundEventRef;
@@ -16,7 +15,6 @@ use steel_registry::vanilla_game_rules::MOB_DROPS;
 use steel_utils::BlockPos;
 
 use crate::entity::mob::{self, LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE, Parts};
-use crate::entity::prelude::*;
 use crate::entity::{Entity, EntityProps, EntitySpawnReason, LivingProps, Mob, MobBase, MobProps};
 use crate::world::LevelReader;
 
@@ -138,19 +136,10 @@ pub const fn entity_props<E: Parts>() -> EntityProps<E> {
 /// `Monster.updateNoActionTime`: bright light makes monsters idle faster,
 /// so they despawn sooner.
 fn update_no_action_time(monster: &dyn Entity) {
-    let Some(world) = monster.level() else {
-        return;
-    };
     let Some(living) = monster.as_living_entity() else {
         return;
     };
-    let position = monster.position();
-    let eye_pos = BlockPos::new(
-        fast_floor(position.x),
-        fast_floor(monster.eye_y()),
-        fast_floor(position.z),
-    );
-    if world.light_level_dependent_magic_value(eye_pos) > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE {
+    if monster.light_level_dependent_magic_value() > LIGHT_MAGIC_VALUE_BRIGHTNESS_GATE {
         living.set_no_action_time(living.no_action_time() + 2);
     }
 }

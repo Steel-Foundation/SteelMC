@@ -1776,7 +1776,7 @@ impl<'a> Mob<'a> {
             fast_floor(self.eye_y()),
             fast_floor(self.position().z),
         );
-        let brightness = world.light_level_dependent_magic_value(eye_pos);
+        let brightness = self.light_level_dependent_magic_value();
         // Rain at either the feet or bounding-box top prevents burning.
         let feet_pos = self.block_position();
         let in_rain = world.is_raining_at(feet_pos)

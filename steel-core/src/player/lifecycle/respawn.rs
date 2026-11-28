@@ -15,13 +15,14 @@ use crate::{
         chunk_request::{ChunkRequest, ChunkTicketKind},
         status::ChunkStatus,
     },
+    permission::{PermissionExpr, PermissionKey},
     player::Player,
 };
-use steel_protocol::packets::game::{CSound, SoundSource};
+use steel_protocol::packets::game::{CGameRuleValues, CSound, SoundSource};
 use steel_registry::blocks::{
     block_state_ext::BlockStateExt as _, properties::BlockStateProperties,
 };
-use steel_registry::{sound_events, vanilla_blocks};
+use steel_registry::{REGISTRY, sound_events, vanilla_blocks};
 
 // Bed candidates reach two blocks out and collision checks read one block farther.
 const PERSONAL_RESPAWN_SEARCH_BLOCK_RADIUS: i32 = 3;
@@ -684,7 +685,7 @@ impl Player {
         self.base.set_boarding_cooldown(0);
     }
 
-    /// Handles client commands, requestStats and `RequestGameRuleValues` are still todo
+    /// Handles the client commands sent while in play.
     pub fn handle_client_command(self: &Arc<Self>, action: ClientCommandAction) {
         self.reset_last_action_time();
         match action {
@@ -696,10 +697,37 @@ impl Player {
                 }
             }
             ClientCommandAction::RequestStats => self.send_stats(),
-            ClientCommandAction::RequestGameRuleValues => {
-                // TODO: implement requesting for game rule values
-            }
+            ClientCommandAction::RequestGameRuleValues => self.send_game_rule_values(),
         }
+    }
+
+    /// Sends the current game rule values to a player with gamerule permission.
+    fn send_game_rule_values(self: &Arc<Self>) {
+        let permission = match PermissionKey::parse("minecraft.command.gamerule") {
+            Ok(key) => PermissionExpr::key(key),
+            Err(error) => {
+                log::error!("invalid built-in gamerule permission key: {error}");
+                return;
+            }
+        };
+        if !self.has_permission(&permission) {
+            log::warn!(
+                "Player {} tried to request game rule values without permission",
+                self.gameprofile.name()
+            );
+            return;
+        }
+
+        let world = self.get_world();
+        let values = REGISTRY
+            .game_rules
+            .iter()
+            .map(|(_, rule)| {
+                let value = world.get_erased_game_rule(rule);
+                (rule.key().clone(), value.to_string())
+            })
+            .collect();
+        self.send_packet(CGameRuleValues { values });
     }
 
     /// Vanilla accepts a client respawn request only when player health is dead-or-dying.

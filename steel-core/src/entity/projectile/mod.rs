@@ -9,6 +9,7 @@
 //!
 //! The block + entity move-vector raycast mirrors `ProjectileUtil`.
 
+pub mod fireball;
 pub mod hurting;
 pub mod throwable;
 pub mod throwable_item;

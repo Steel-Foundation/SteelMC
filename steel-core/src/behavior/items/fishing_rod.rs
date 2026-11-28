@@ -13,6 +13,7 @@ use steel_registry::game_events::GameEventRef;
 use steel_registry::sound_events::{ENTITY_FISHING_BOBBER_RETRIEVE, ENTITY_FISHING_BOBBER_THROW};
 use steel_registry::stat::vanilla_stat_types;
 use steel_registry::{vanilla_entities, vanilla_game_events, vanilla_items};
+use steel_utils::TICKS_PER_SECOND;
 
 /// Behavior for the fishing rod item.
 #[item_behavior]
@@ -86,7 +87,11 @@ impl ItemBehavior for FishingRodItem {
                 Arc::downgrade(world),
             );
 
-            hook.shoot_from_player(player, luck as i32, lure_speed as i32);
+            hook.shoot_from_player(
+                player,
+                luck as i32,
+                (lure_speed * TICKS_PER_SECOND as f32) as i32,
+            );
 
             let entity: SharedEntity = hook;
 

@@ -1,6 +1,5 @@
 //! TNT block behavior and priming entry points.
 
-use crate::entity::prelude::*;
 use std::sync::Arc;
 
 use steel_macros::block_behavior;

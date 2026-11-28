@@ -1,4 +1,3 @@
-use crate::entity::prelude::*;
 use glam::DVec3;
 use steel_utils::BlockPos;
 
@@ -116,6 +115,7 @@ mod tests {
 
     use super::*;
     use crate::entity::entities::ChickenEntity;
+    use crate::entity::prelude::*;
 
     fn pig() -> Arc<ChickenEntity> {
         ChickenEntity::new(&vanilla_entities::CHICKEN, 1, DVec3::ZERO, Weak::new())
