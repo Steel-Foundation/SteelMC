@@ -263,6 +263,7 @@ fn double_chest_menu_maps_real_slots_and_merges_stacks_across_both_halves() {
         1,
         chest.owners,
         chest.containers,
+        CHEST_SLOTS,
     );
     assert_eq!(menu.behavior().slot_count(), 90);
     menu.clicked(Click::QuickMove { slot: 54 }, &player);
