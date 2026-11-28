@@ -3,7 +3,6 @@
 use std::sync::{Arc, Weak};
 
 use glam::DVec3;
-use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use simdnbt::{FromNbtTag as _, ToNbtTag as _};
@@ -30,6 +29,7 @@ use steel_registry::{
     vanilla_entities, vanilla_items, vanilla_particle_types, vanilla_suspicious_stew_effects,
 };
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::RandomSource;
 use steel_utils::types::InteractionHand;
 use steel_utils::{BlockPos, BlockStateId, Downcast as _, DowncastType, DowncastTypeKey};
 use uuid::Uuid;
@@ -101,10 +101,10 @@ impl MushroomCowEntity {
     /// Unlike `check_animal_spawn_rules`, light is required for every spawn reason.
     pub(crate) fn check_mushroom_spawn_rules(
         _entity_type: EntityTypeRef,
-        level: &dyn LevelReader,
+        level: &World,
         _spawn_reason: EntitySpawnReason,
         pos: BlockPos,
-        _random: &mut dyn Rng,
+        _random: &mut RandomSource,
     ) -> bool {
         level
             .get_block_state(pos.below())

@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::world::World;
 
-use super::{SharedEntity, WeakEntity};
+use super::{Entity, SharedEntity, WeakEntity};
 
 /// A UUID reference that re-resolves removed entities within the same domain.
 ///
@@ -53,6 +53,12 @@ impl EntityReference {
     #[must_use]
     pub const fn uuid(&self) -> Uuid {
         self.uuid
+    }
+
+    /// Returns whether this reference points at `entity`.
+    #[must_use]
+    pub fn matches(&self, entity: &dyn Entity) -> bool {
+        self.uuid == entity.uuid()
     }
 
     /// Caches an entity only when its UUID matches this reference.

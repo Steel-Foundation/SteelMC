@@ -436,7 +436,7 @@ impl World {
                     .with_tool(context.tool().unwrap_or(&empty_tool))
                     .with_luck(context.luck())
                     .with_block_state(state)
-                    .with_origin(context.pos().get_center());
+                    .with_origin(context.origin());
                 if let Some(block_entity) = &block_entity {
                     ctx = ctx.with_block_entity(block_entity.as_ref());
                 }

@@ -2,7 +2,6 @@ use std::iter::empty;
 use std::sync::Weak;
 
 use glam::DVec3;
-use rand::Rng;
 use simdnbt::borrow::NbtCompound as BorrowedNbtCompoundView;
 use simdnbt::owned::NbtCompound;
 use steel_macros::entity_behavior;
@@ -12,6 +11,7 @@ use steel_registry::sound_event::SoundEventRef;
 use steel_registry::vanilla_entity_data::BlazeEntityData;
 use steel_registry::{sound_events, vanilla_attributes};
 use steel_utils::locks::SyncMutex;
+use steel_utils::random::RandomSource;
 use steel_utils::{BlockPos, DowncastType, DowncastTypeKey};
 
 use crate::entity::ai::goal::{
@@ -27,7 +27,7 @@ use crate::entity::{
     SharedEntity, SpawnRule, sync_dirty_mob_effects,
 };
 use crate::physics::MoveResult;
-use crate::world::{LevelReader, World};
+use crate::world::World;
 
 const DEFAULT_STEP_HEIGHT: f32 = 0.6;
 const FALL_SPEED_MULTIPLIER: f64 = 0.6;
@@ -77,10 +77,10 @@ impl BlazeEntity {
     /// Checks the Blaze placement predicate for the spawner-only dispatcher.
     pub(crate) fn check_blaze_spawn_rules(
         entity_type: EntityTypeRef,
-        level: &dyn LevelReader,
+        level: &World,
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
-        _random: &mut dyn Rng,
+        _random: &mut RandomSource,
     ) -> bool {
         <Self as Mob>::check_mob_spawn_rules(entity_type, level, spawn_reason, pos)
     }

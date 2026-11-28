@@ -100,7 +100,11 @@ pub trait Monster: PathfinderMob + Enemy {
     }
 
     /// Checks dimension light limits using the caller's seeded RNG.
-    fn is_dark_enough_to_spawn(level: &World, pos: BlockPos, random: &mut impl Random) -> bool
+    fn is_dark_enough_to_spawn(
+        level: &World,
+        pos: BlockPos,
+        random: &mut (impl Random + ?Sized),
+    ) -> bool
     where
         Self: Sized,
     {
@@ -134,7 +138,7 @@ pub trait Monster: PathfinderMob + Enemy {
         level: &World,
         spawn_reason: EntitySpawnReason,
         pos: BlockPos,
-        random: &mut impl Random,
+        random: &mut (impl Random + ?Sized),
     ) -> bool
     where
         Self: Sized,
@@ -185,7 +189,7 @@ fn is_spawn_allowed_on_difficulty(entity_type: EntityTypeRef, level: &World) -> 
 /// providers; unknown distributions currently return their minimum.
 fn sample_monster_spawn_light_test(
     level: &MonsterSpawnLightLevel,
-    random: &mut impl Random,
+    random: &mut (impl Random + ?Sized),
 ) -> i32 {
     match level {
         MonsterSpawnLightLevel::Simple(level) => *level,

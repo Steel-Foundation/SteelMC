@@ -1,7 +1,7 @@
 //! Entity-type spawn placement dispatch.
 
-use rand::Rng;
 use steel_registry::entity_type::EntityTypeRef;
+use steel_utils::random::RandomSource;
 use steel_utils::{BlockPos, types::Difficulty};
 
 use crate::entity::{ENTITIES, EntitySpawnReason};
@@ -19,7 +19,7 @@ impl SpawnPlacements {
         entity_type: EntityTypeRef,
         world: &World,
         pos: BlockPos,
-        random: &mut dyn Rng,
+        random: &mut RandomSource,
     ) -> bool {
         if !entity_type.allowed_in_peaceful && world.difficulty() == Difficulty::Peaceful {
             return false;

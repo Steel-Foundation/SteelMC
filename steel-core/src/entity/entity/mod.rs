@@ -1598,6 +1598,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
         self.entity_type().is_abstract_arrow
     }
 
+    /// Returns whether projectile side effects apply after a hit.
+    fn projectile_receives_side_effects_on_hit(&self, _was_hurt: bool) -> bool {
+        true
+    }
+
     /// Returns open-water fishing state, or `None` for entities without fishing-hook behavior.
     fn fishing_hook_open_water(&self) -> Option<bool> {
         None
@@ -1611,6 +1616,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns this entity's container-user capability.
     fn as_container_user(&self) -> Option<&dyn super::ContainerUser> {
         try_as_dyn::<Self, dyn super::ContainerUser>(self)
+    }
+
+    /// Returns read access to this entity's thrown-potion item, if any.
+    fn as_thrown_potion_item(&self) -> Option<&dyn ThrownPotionItem> {
+        try_as_dyn::<Self, dyn ThrownPotionItem>(self)
     }
 
     /// Returns this entity as a hurting projectile when it has hurting-projectile behavior.
@@ -1716,6 +1726,11 @@ pub trait Entity: EntityEventSource + ErasedType + Send + Sync + 'static {
     /// Returns the `Monster` capability, equivalent to vanilla's `instanceof Monster`.
     fn as_monster(&self) -> Option<&dyn Monster> {
         try_as_dyn::<Self, dyn Monster>(self)
+    }
+
+    /// Returns this entity's neutral-mob capability, if present.
+    fn as_neutral_mob(&self) -> Option<&dyn super::NeutralMob> {
+        try_as_dyn::<Self, dyn super::NeutralMob>(self)
     }
 
     /// Whether this entity implements the `Enemy` marker.

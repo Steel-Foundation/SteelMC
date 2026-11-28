@@ -114,6 +114,7 @@ pub struct BlockLootContext<'a> {
     tool: Option<&'a ItemStack>,
     explosion_radius: Option<f32>,
     luck: f32,
+    origin: Option<DVec3>,
 }
 
 impl<'a> BlockLootContext<'a> {
@@ -128,6 +129,7 @@ impl<'a> BlockLootContext<'a> {
             tool: None,
             explosion_radius: None,
             luck: 0.0,
+            origin: None,
         }
     }
 
@@ -164,6 +166,20 @@ impl<'a> BlockLootContext<'a> {
     pub const fn with_luck(mut self, luck: f32) -> Self {
         self.luck = luck;
         self
+    }
+
+    /// Overrides the loot origin, used when a block's drops originate from a
+    /// live entity rather than the block position.
+    #[must_use]
+    pub const fn with_origin(mut self, origin: DVec3) -> Self {
+        self.origin = Some(origin);
+        self
+    }
+
+    /// Returns the loot origin, defaulting to this block's center.
+    #[must_use]
+    pub fn origin(&self) -> DVec3 {
+        self.origin.unwrap_or_else(|| self.pos.get_center())
     }
 
     /// Returns the world containing the block.

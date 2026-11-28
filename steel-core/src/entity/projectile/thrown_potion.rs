@@ -20,6 +20,15 @@ use crate::entity::{LivingEntity, ProjectileHit, RemovalReason, SharedEntity};
 use crate::world::ClipHitResult;
 use crate::world::World;
 
+/// Dyn-compatible read access to the item carried by a thrown potion.
+///
+/// `AbstractThrownPotion` itself is not object-safe because its impact hooks
+/// require `Arc<Self>`; this view exposes only what damage handling needs.
+pub trait ThrownPotionItem {
+    /// Returns the item stack carried by this potion projectile.
+    fn thrown_potion_item(&self) -> ItemStack;
+}
+
 /// Squared distance within which a splash reaches an entity.
 pub const SPLASH_RANGE_SQ: f64 = 16.0;
 /// How far the splash search box extends past the potion's box on the X and Z axes.

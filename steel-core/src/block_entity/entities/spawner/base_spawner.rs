@@ -16,6 +16,8 @@ use steel_registry::{
 use steel_utils::entity_events::EntityStatus;
 use steel_utils::locks::SyncMutex;
 use steel_utils::nbt::{NbtNumeric, merge_nbt_compounds};
+use steel_utils::random::RandomSource;
+use steel_utils::random::legacy_random::LegacyRandom;
 use steel_utils::types::Difficulty;
 use steel_utils::{BlockPos, Identifier, WorldAabb};
 
@@ -428,13 +430,17 @@ impl BaseSpawner {
                 if !custom_rules.is_valid_position(world, spawn_block_pos) {
                     continue;
                 }
-            } else if !SpawnPlacements::check_spawner_spawn_rules(
-                entity_type,
-                world,
-                spawn_block_pos,
-                &mut random,
-            ) {
-                continue;
+            } else {
+                let mut spawn_rule_random =
+                    RandomSource::Legacy(LegacyRandom::from_seed(random.random::<u64>()));
+                if !SpawnPlacements::check_spawner_spawn_rules(
+                    entity_type,
+                    world,
+                    spawn_block_pos,
+                    &mut spawn_rule_random,
+                ) {
+                    continue;
+                }
             }
 
             let Some(loaded) = load_entity_recursive_owned(
